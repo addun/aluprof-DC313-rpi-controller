@@ -100,18 +100,7 @@
                   <option value="UP">UP (Move Cursor)</option>
                   <option value="DOWN">DOWN (Go Down)</option>
                   <option value="STOP">STOP (Execute Stop)</option>
-                  <option value="DELAY">DELAY (Wait/Pause)</option>
                 </select>
-              </div>
-              <div id="delay-duration-container" class="d-none">
-                <input
-                  type="number"
-                  id="delay-duration"
-                  class="form-control form-control-sm"
-                  placeholder="Duration (seconds)"
-                  min="0.1"
-                  step="0.1"
-                />
               </div>
               <button type="submit" class="btn btn-success w-100 fw-semibold">Go to Nr & EXECUTE</button>
             </form>
@@ -125,7 +114,7 @@
                 id="batch-json"
                 class="form-control form-control-sm"
                 rows="3"
-                placeholder='[{"nr": 1, "action": "DOWN"}, {"nr": 1, "action": "DELAY", "duration": 10}, {"nr": 1, "action": "UP"}, {"nr": 1, "action": "DELAY", "duration": 2}, {"nr": 1, "action": "STOP"}]'
+                placeholder='[{"nr": 1, "action": "DOWN"}, {"nr": 2, "action": "UP"}, {"nr": 3, "action": "STOP"}]'
               ></textarea>
               <button type="submit" class="btn btn-sm btn-warning w-100 mt-2 fw-semibold">Execute Batch</button>
             </form>
@@ -187,18 +176,6 @@
         sendRequest("/state", "GET");
       });
 
-      // --- Show/Hide duration field based on action type ---
-      document.getElementById("action-type").addEventListener("change", function (e) {
-        const durationContainer = document.getElementById("delay-duration-container");
-        if (e.target.value === "DELAY") {
-          durationContainer.classList.remove("d-none");
-          document.getElementById("delay-duration").required = true;
-        } else {
-          durationContainer.classList.add("d-none");
-          document.getElementById("delay-duration").required = false;
-        }
-      });
-
       // --- 2. POST /sync ---
       document.getElementById("form-sync-state").addEventListener("submit", function (e) {
         e.preventDefault();
@@ -217,22 +194,8 @@
         if (isNaN(nr) || !action) return;
 
         const body = [{ nr: nr, action: action }];
-
-        // Add duration for DELAY actions
-        if (action === "DELAY") {
-          const duration = parseFloat(document.getElementById("delay-duration").value);
-          if (isNaN(duration) || duration <= 0) {
-            outputElement.textContent = "Error: DELAY action requires a positive duration value.";
-            outputElement.classList.add("text-danger");
-            return;
-          }
-          body[0].duration = duration;
-        }
-
         sendRequest("/actions", "POST", body);
-      });
-
-      // --- 4. POST /actions (Batch Action) ---
+      }); // --- 4. POST /actions (Batch Action) ---
       document.getElementById("form-batch-action").addEventListener("submit", function (e) {
         e.preventDefault();
         const jsonText = document.getElementById("batch-json").value;

@@ -5,6 +5,8 @@ This module handles all GPIO operations including pin configuration and control.
 """
 
 import time
+import sys
+
 try:
     import RPi.GPIO as GPIO
 except ImportError:
@@ -28,7 +30,7 @@ class GPIOController:
     def configure_pins(self):
         """Configure all GPIO pins as outputs with inactive state."""
         if not self._gpio_available:
-            print("[WARNING] GPIO not available - running in simulation mode")
+            print("[WARNING] GPIO not available - running in simulation mode", file=sys.stdout)
             return
         
         for pin in self.config.PIN_MAP.values():
@@ -46,5 +48,5 @@ class GPIOController:
             time.sleep(self.config.PRESS_DELAY_SEC)
         else:
             # Simulation for testing on a non-Pi environment
-            print(f"[SIMULATE] Pin {pin} pressed.")
+            print(f"[SIMULATE] Pin {pin} pressed.", file=sys.stdout)
             time.sleep(self.config.PRESS_DELAY_SEC)
