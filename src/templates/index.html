@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Raspberry Pi Remote Controller</title>
+    <!-- Load Bootstrap 5 from CDN -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      xintegrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+    <!-- Load Inter font and Tailwind configuration for aesthetics -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap");
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f4f6f9;
+      }
+      .card {
+        border-radius: 1rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      .btn {
+        border-radius: 0.5rem;
+      }
+      /* Custom style for response box */
+      #response-output {
+        min-height: 150px;
+        background-color: #e9ecef;
+        border: 1px solid #ced4da;
+        border-radius: 0.5rem;
+        padding: 10px;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+    <div class="container" style="max-width: 800px">
+      <h1 class="text-center mb-4 text-primary fw-bold">Pi Device Controller (0-15)</h1>
+
+      <!-- API URL Configuration (Dynamic - uses current host) -->
+      <input type="hidden" id="api-base-url" value="" />
+
+      <div class="mb-4">
+        <h5 class="fw-semibold text-dark">API Response:</h5>
+        <pre id="response-output"></pre>
+      </div>
+
+      <div class="row g-4">
+        <!-- Card 1: State & Sync -->
+        <div class="col-md-6">
+          <div class="card p-4">
+            <h5 class="card-title fw-bold text-dark">State Management</h5>
+            <p class="text-muted small">Synchronize and view the current display number.</p>
+
+            <form id="form-get-state" class="mb-3">
+              <button type="submit" class="btn btn-sm btn-outline-info w-100 fw-semibold">
+                GET /state (Check Status)
+              </button>
+            </form>
+
+            <form id="form-sync-state" class="d-flex gap-2">
+              <input
+                type="number"
+                id="sync-value"
+                class="form-control form-control-sm"
+                placeholder="Sync to Nr (0-15)"
+                min="0"
+                max="15"
+                required
+              />
+              <button type="submit" class="btn btn-sm btn-primary flex-shrink-0 fw-semibold">SYNC</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Card 2: Sequenced Actions -->
+        <div class="col-md-6">
+          <div class="card p-4">
+            <h5 class="card-title fw-bold text-dark">Sequenced Actions (/actions)</h5>
+            <p class="text-muted small">Select device number and command action.</p>
+
+            <form id="form-single-action" class="d-flex flex-column gap-2">
+              <div class="d-flex gap-2">
+                <input
+                  type="number"
+                  id="action-nr"
+                  class="form-control form-control-sm"
+                  placeholder="Device Nr (0-15)"
+                  min="0"
+                  max="15"
+                  required
+                />
+                <select id="action-type" class="form-select form-select-sm" required>
+                  <option value="" disabled selected>Select Action</option>
+                  <option value="UP">UP (Move Cursor)</option>
+                  <option value="DOWN">DOWN (Go Down)</option>
+                  <option value="STOP">STOP (Execute Stop)</option>
+                  <option value="DELAY">DELAY (Wait/Pause)</option>
+                </select>
+              </div>
+              <div id="delay-duration-container" class="d-none">
+                <input
+                  type="number"
+                  id="delay-duration"
+                  class="form-control form-control-sm"
+                  placeholder="Duration (seconds)"
+                  min="0.1"
+                  step="0.1"
+                />
+              </div>
+              <button type="submit" class="btn btn-success w-100 fw-semibold">Go to Nr & EXECUTE</button>
+            </form>
+
+            <p class="text-center text-muted small mt-3 mb-0">--- OR ---</p>
+
+            <!-- Batch Action Input (Pre-formatted JSON) -->
+            <h6 class="mt-2 mb-1 fw-semibold small">Batch Action JSON:</h6>
+            <form id="form-batch-action">
+              <textarea
+                id="batch-json"
+                class="form-control form-control-sm"
+                rows="3"
+                placeholder='[{"nr": 1, "action": "DOWN"}, {"nr": 1, "action": "DELAY", "duration": 10}, {"nr": 1, "action": "UP"}, {"nr": 1, "action": "DELAY", "duration": 2}, {"nr": 1, "action": "STOP"}]'
+              ></textarea>
+              <button type="submit" class="btn btn-sm btn-warning w-100 mt-2 fw-semibold">Execute Batch</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Dynamically determine API base URL using current host and port
+      const API_BASE = `${window.location.protocol}//${window.location.hostname}:4000`;
+      const outputElement = document.getElementById("response-output");
+
+      // --- Utility Function to Display API Response ---
+      async function displayResponse(response, title = "Response") {
+        try {
+          const data = await response.json();
+          outputElement.textContent =
+            `${title} (${response.status} ${response.statusText}):\n` + JSON.stringify(data, null, 2);
+          outputElement.classList.remove("text-danger", "text-success", "text-info");
+
+          if (response.ok) {
+            outputElement.classList.add("text-success");
+          } else {
+            outputElement.classList.add("text-danger");
+          }
+        } catch (error) {
+          outputElement.textContent = `Error processing response: ${error.message}`;
+          outputElement.classList.add("text-danger");
+        }
+      }
+
+      // --- Core Fetch Function ---
+      async function sendRequest(url, method = "GET", body = null, isJson = true) {
+        outputElement.textContent = "Sending request...";
+        outputElement.classList.remove("text-success", "text-danger");
+
+        const headers = {};
+        if (isJson) {
+          headers["Content-Type"] = "application/json";
+        }
+
+        try {
+          const response = await fetch(API_BASE + url, {
+            method: method,
+            headers: headers,
+            body: body ? JSON.stringify(body) : null,
+          });
+          await displayResponse(response, `Endpoint: ${url}`);
+        } catch (error) {
+          outputElement.textContent = `NETWORK ERROR: Could not connect to API at ${API_BASE}. Ensure server is running and IP is correct. Error: ${error.message}`;
+          outputElement.classList.add("text-danger");
+        }
+      }
+
+      // --- 1. GET /state ---
+      document.getElementById("form-get-state").addEventListener("submit", function (e) {
+        e.preventDefault();
+        sendRequest("/state", "GET");
+      });
+
+      // --- Show/Hide duration field based on action type ---
+      document.getElementById("action-type").addEventListener("change", function (e) {
+        const durationContainer = document.getElementById("delay-duration-container");
+        if (e.target.value === "DELAY") {
+          durationContainer.classList.remove("d-none");
+          document.getElementById("delay-duration").required = true;
+        } else {
+          durationContainer.classList.add("d-none");
+          document.getElementById("delay-duration").required = false;
+        }
+      });
+
+      // --- 2. POST /sync ---
+      document.getElementById("form-sync-state").addEventListener("submit", function (e) {
+        e.preventDefault();
+        const value = parseInt(document.getElementById("sync-value").value);
+        if (isNaN(value)) return;
+
+        sendRequest("/sync", "POST", { value: value });
+      });
+
+      // --- 3. POST /actions (Single Action) ---
+      document.getElementById("form-single-action").addEventListener("submit", function (e) {
+        e.preventDefault();
+        const nr = parseInt(document.getElementById("action-nr").value);
+        const action = document.getElementById("action-type").value;
+
+        if (isNaN(nr) || !action) return;
+
+        const body = [{ nr: nr, action: action }];
+
+        // Add duration for DELAY actions
+        if (action === "DELAY") {
+          const duration = parseFloat(document.getElementById("delay-duration").value);
+          if (isNaN(duration) || duration <= 0) {
+            outputElement.textContent = "Error: DELAY action requires a positive duration value.";
+            outputElement.classList.add("text-danger");
+            return;
+          }
+          body[0].duration = duration;
+        }
+
+        sendRequest("/actions", "POST", body);
+      });
+
+      // --- 4. POST /actions (Batch Action) ---
+      document.getElementById("form-batch-action").addEventListener("submit", function (e) {
+        e.preventDefault();
+        const jsonText = document.getElementById("batch-json").value;
+
+        try {
+          const body = JSON.parse(jsonText);
+          if (!Array.isArray(body)) {
+            outputElement.textContent = "Error: Batch input must be a JSON array.";
+            outputElement.classList.add("text-danger");
+            return;
+          }
+          sendRequest("/actions", "POST", body);
+        } catch (error) {
+          outputElement.textContent =
+            "Error parsing JSON input. Please check syntax (e.g., ensure keys are double-quoted).";
+          outputElement.classList.add("text-danger");
+        }
+      });
+    </script>
+  </body>
+</html>
