@@ -37,16 +37,28 @@ class GPIOController:
             GPIO.setup(pin, GPIO.OUT, initial=self.config.INACTIVE_STATE)
     
     def press_pin(self, pin: int):
-        """Simulates a momentary button press."""
+        """Simulates a momentary button press with automatic duration based on pin type."""
+        # Find the button name for this pin and get its duration
+        button_name = None
+        for name, pin_num in self.config.PIN_MAP.items():
+            if pin_num == pin:
+                button_name = name
+                break
+        
+        if button_name:
+            press_duration = self.config.PRESS_DURATION_MAP.get(button_name, 0.1)
+        else:
+            press_duration = 0.1  # Default fallback
+            
         if self._gpio_available:
             # 1. Activate the relay (press the button)
             GPIO.output(pin, self.config.ACTIVE_STATE)
-            time.sleep(self.config.PRESS_DURATION_SEC)
+            time.sleep(press_duration)
 
             # 2. Deactivate the relay (release the button)
             GPIO.output(pin, self.config.INACTIVE_STATE)
             time.sleep(self.config.PRESS_DELAY_SEC)
         else:
             # Simulation for testing on a non-Pi environment
-            print(f"[SIMULATE] Pin {pin} pressed.", file=sys.stdout)
+            print(f"[SIMULATE] Pin {pin} pressed for {press_duration}s.", file=sys.stdout)
             time.sleep(self.config.PRESS_DELAY_SEC)

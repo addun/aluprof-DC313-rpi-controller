@@ -1,0 +1,3 @@
+
+class RemoteController:
+    pass

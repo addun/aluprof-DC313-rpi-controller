@@ -13,10 +13,18 @@ class Config:
     STATE_FILE = 'display_state.json'
     
     # --- Timing Configuration ---
-    PRESS_DURATION_SEC = 0.1
     PRESS_DELAY_SEC = 0.1  # Delay between presses to allow the PIC chip to register input
     WAKE_UP_DELAY_SEC = 0.5
     GO_TO_SLEEP_DELAY_SEC = 8  # Device needs 8 seconds to go to sleep after any action
+    
+    # Press duration configuration based on PIN_MAP
+    PRESS_DURATION_MAP = {
+        'DECREASE': 0.1,   # Short signal for decrease
+        'MOVE_UP': 0.1,    # Long press for up movement
+        'STOP': 0.1,       # Long press for stop action
+        'INCREASE': 0.1,   # Short signal for increase
+        'GO_DOWN': 0.1,    # Long press for down movement
+    }
     
     # --- GPIO Pin Configuration ---
     # Corrected Pin Mapping based on user input
@@ -28,7 +36,6 @@ class Config:
         'GO_DOWN': 15,   # BCM 15: Moves cursor/action (DOES NOT update number state)
     }
     
-        # Mapping user-friendly actions to defined PIN_MAP keys (used in /actions body)
     ACTION_ALIAS = {
         "UP": "MOVE_UP",
         "DOWN": "GO_DOWN",

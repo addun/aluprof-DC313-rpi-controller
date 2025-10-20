@@ -126,6 +126,7 @@ class PiAluprofApp:
                     # Press the manual pin (MOVE_UP, GO_DOWN, or STOP). This does NOT change the state value.
                     self.gpio_controller.press_pin(self.config.PIN_MAP[mapped_action])
                     self.last_action_time = time.time()
+                    time.sleep(0.5) # Small delay to ensure action is registered
                     
                     results.append({
                         "type": "sequenced_command", 
