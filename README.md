@@ -34,7 +34,6 @@ pidupa/
 1. **Clone/Download the project**
 2. **Create virtual environment:**
    ```bash
-   cd pidupa
    python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
@@ -56,6 +55,7 @@ python3 main.py
 ```
 
 The application will:
+
 - Start on `http://0.0.0.0:4000` (accessible from local network)
 - Load previous state from `display_state.json`
 - Initialize GPIO (on Raspberry Pi) or run in simulation mode
@@ -70,6 +70,7 @@ The application will:
 ### Web Interface
 
 Access the web interface at `http://[raspberry-pi-ip]:4000` to:
+
 - View current state
 - Sync state manually
 - Execute single or batch actions
@@ -78,6 +79,7 @@ Access the web interface at `http://[raspberry-pi-ip]:4000` to:
 ## Configuration
 
 Edit `src/config.py` to modify:
+
 - GPIO pin mappings
 - Timing parameters
 - Relay configuration (active high/low)
@@ -86,6 +88,7 @@ Edit `src/config.py` to modify:
 ## Development
 
 The application supports development mode:
+
 - Automatically detects if running on non-Pi environment
 - Simulates GPIO operations with console output
 - All functionality works without actual GPIO hardware
@@ -93,6 +96,7 @@ The application supports development mode:
 ## GPIO Pin Configuration
 
 Default BCM pin mapping:
+
 - **Pin 2**: DECREASE (decrements display value)
 - **Pin 3**: MOVE_UP (cursor movement)
 - **Pin 4**: STOP (stop action)

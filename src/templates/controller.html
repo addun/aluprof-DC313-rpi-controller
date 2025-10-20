@@ -207,13 +207,247 @@
         background-color: #ff6600;
         box-shadow: 0 0 8px #ff6600;
       }
+
+      .log-panel {
+        background-color: #1a1a1a;
+        border: 2px solid #444;
+        border-radius: 10px;
+        padding: 15px;
+        margin-top: 20px;
+        width: 100%;
+        max-width: 600px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .log-title {
+        color: #ccc;
+        font-size: 14px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .log-content {
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        color: #00ff00;
+        background-color: #000;
+        padding: 10px;
+        border-radius: 5px;
+        min-height: 100px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .log-entry {
+        margin-bottom: 5px;
+        padding: 2px 0;
+        border-bottom: 1px solid #333;
+      }
+
+      .log-timestamp {
+        color: #888;
+        font-size: 10px;
+      }
+
+      .log-response {
+        color: #00ff00;
+      }
+
+      .log-error {
+        color: #ff4444;
+      }
     </style>
+    <script>
+      // API endpoint base URL
+      const API_BASE = "";
+
+      // Polling interval for state updates
+      let statePollingInterval = null;
+      const POLLING_INTERVAL_MS = 1000; // 1 second
+      let logEntryCounter = 0;
+
+      // Logging functions
+      function addLogEntry(message, type = "response") {
+        const logContent = document.getElementById("logContent");
+        const timestamp = new Date().toLocaleTimeString();
+
+        const logEntry = document.createElement("div");
+        logEntry.className = `log-entry log-${type}`;
+        logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${message}`;
+
+        // Insert at the top (newest first)
+        logContent.insertBefore(logEntry, logContent.firstChild);
+
+        // Keep only last 50 entries
+        const entries = logContent.children;
+        if (entries.length > 50) {
+          logContent.removeChild(entries[entries.length - 1]);
+        }
+      }
+
+      function logServerResponse(endpoint, data, isError = false) {
+        const type = isError ? "error" : "response";
+        const message = JSON.stringify(data, null, 2);
+        addLogEntry(message, type);
+      }
+
+      // Button press handler
+      async function pressButton(buttonId) {
+        try {
+          const response = await fetch(`${API_BASE}/press/${buttonId}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            logServerResponse(`POST /press/${buttonId}`, data);
+            // Visual feedback and refresh state from server
+            showButtonFeedback(buttonId);
+            pollState();
+          } else {
+            logServerResponse(`POST /press/${buttonId}`, data, true);
+            console.error(`Error pressing button ${buttonId}:`, data.error);
+            showError(`Error: ${data.error}`);
+          }
+        } catch (error) {
+          console.error(`Network error pressing button ${buttonId}:`, error);
+          showError("Network error - check connection");
+        }
+      }
+
+      // Update the display number
+      function updateDisplay(value) {
+        const displayElement = document.getElementById("displayNumber");
+        if (displayElement) {
+          displayElement.textContent = value;
+        }
+      }
+
+      // Show visual feedback for button press
+      function showButtonFeedback(buttonId) {
+        const buttonElement = document.getElementById(`${buttonId.toLowerCase()}Btn`);
+        if (buttonElement) {
+          buttonElement.style.transform = "translateY(2px)";
+          setTimeout(() => {
+            buttonElement.style.transform = "";
+          }, 150);
+        }
+      }
+
+      // Update sleep state based on server response
+      function updateSleepState(isDeviceAsleep) {
+        const screen = document.getElementById("screen");
+        const statusIndicator = document.getElementById("statusIndicator");
+
+        if (isDeviceAsleep) {
+          screen.classList.add("sleeping");
+          statusIndicator.classList.add("sleeping");
+        } else {
+          screen.classList.remove("sleeping");
+          statusIndicator.classList.remove("sleeping");
+        }
+      }
+
+      // Show error message
+      function showError(message) {
+        // Simple error display - could be enhanced with a proper notification system
+        console.error(message);
+
+        // Flash the status indicator red briefly
+        const statusIndicator = document.getElementById("statusIndicator");
+        if (statusIndicator) {
+          const originalColor = statusIndicator.style.backgroundColor;
+          statusIndicator.style.backgroundColor = "#ff0000";
+          statusIndicator.style.boxShadow = "0 0 8px #ff0000";
+
+          setTimeout(() => {
+            statusIndicator.style.backgroundColor = originalColor;
+            statusIndicator.style.boxShadow = "";
+          }, 1000);
+        }
+      }
+
+      // Load current state from server
+      async function loadCurrentState() {
+        try {
+          const response = await fetch(`${API_BASE}/state`);
+          const data = await response.json();
+
+          if (response.ok) {
+            logServerResponse("GET /state (initial)", data);
+            updateDisplay(data.current_value);
+            updateSleepState(data.is_device_asleep);
+          } else {
+            logServerResponse("GET /state (initial)", data, true);
+            console.error("Error loading state:", data.error);
+          }
+        } catch (error) {
+          console.error("Network error loading state:", error);
+        }
+      }
+
+      // Poll server for current state
+      async function pollState() {
+        try {
+          const response = await fetch(`${API_BASE}/state`);
+          const data = await response.json();
+
+          if (response.ok) {
+            logServerResponse("GET /state", data);
+            updateDisplay(data.current_value);
+            updateSleepState(data.is_device_asleep);
+          } else {
+            logServerResponse("GET /state", data, true);
+            console.error("Error polling state:", data.error);
+          }
+        } catch (error) {
+          console.error("Network error polling state:", error);
+        }
+      }
+
+      // Start state polling
+      function startStatePolling() {
+        if (statePollingInterval) {
+          clearInterval(statePollingInterval);
+        }
+        statePollingInterval = setInterval(pollState, POLLING_INTERVAL_MS);
+      }
+
+      // Stop state polling
+      function stopStatePolling() {
+        if (statePollingInterval) {
+          clearInterval(statePollingInterval);
+          statePollingInterval = null;
+        }
+      }
+
+      // Initialize event listeners when page loads
+      document.addEventListener("DOMContentLoaded", function () {
+        loadCurrentState();
+        startStatePolling();
+
+        // Add click event listeners to all buttons
+        document.getElementById("upBtn").addEventListener("click", () => pressButton("UP"));
+        document.getElementById("leftBtn").addEventListener("click", () => pressButton("LEFT"));
+        document.getElementById("stopBtn").addEventListener("click", () => pressButton("STOP"));
+        document.getElementById("rightBtn").addEventListener("click", () => pressButton("RIGHT"));
+        document.getElementById("bottomBtn").addEventListener("click", () => pressButton("DOWN"));
+        document.getElementById("p2Btn").addEventListener("click", () => pressButton("P2"));
+      });
+    </script>
   </head>
   <body>
     <div class="controller-container">
       <div class="screen" id="screen">
         <div class="status-indicator" id="statusIndicator"></div>
-        <div class="display-number" id="displayNumber">15</div>
+        <div class="display-number" id="displayNumber"></div>
       </div>
 
       <div class="game-pad">
@@ -225,9 +459,14 @@
       </div>
 
       <div class="control-panel">
-        <div class="panel-title">Control Panel</div>
+        <div class="panel-title">Extra buttons</div>
         <button class="p2-button" id="p2Btn">P2</button>
       </div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-title">Server Response Log</div>
+      <div class="log-content" id="logContent"></div>
     </div>
   </body>
 </html>

@@ -28,7 +28,9 @@ class PiAluprofApp:
     
     def get_state(self):
         """Returns the current synchronized state of the display."""
-        return jsonify(self.remote_controller.get_state_info())
+        state_info = self.remote_controller.get_state_info()
+        state_info['is_device_asleep'] = self.remote_controller._is_device_asleep()
+        return jsonify(state_info)
     
     def sync_state(self):
         """Manually sets the internal state value. POST Body: {"value": 5}"""
@@ -171,7 +173,7 @@ class PiAluprofApp:
     def serve_index(self):
         """Serves the index.html file from the templates directory."""
         try:
-            return send_from_directory('templates', 'index.html')
+            return send_from_directory('templates', 'controller.html')
         except FileNotFoundError:
             return Response("Error: index.html not found. Please ensure the file is in the templates directory.", status=404)
         except Exception as e:
