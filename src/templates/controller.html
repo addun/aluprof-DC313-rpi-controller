@@ -25,7 +25,6 @@
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         border: 2px solid #444;
         max-width: 400px;
-        width: 100%;
       }
 
       .screen {
@@ -149,7 +148,7 @@
         border: 2px solid #555;
         border-radius: 10px;
         padding: 20px;
-        width: 100%;
+        width: auto;
         max-width: 300px;
         margin: 0 auto;
       }
@@ -175,7 +174,7 @@
         padding: 15px 30px;
         transition: all 0.1s ease;
         user-select: none;
-        width: 100%;
+        width: auto;
         text-align: center;
       }
 
@@ -207,58 +206,6 @@
         background-color: #ff6600;
         box-shadow: 0 0 8px #ff6600;
       }
-
-      .log-panel {
-        background-color: #1a1a1a;
-        border: 2px solid #444;
-        border-radius: 10px;
-        padding: 15px;
-        margin-top: 20px;
-        width: 100%;
-        max-width: 600px;
-        max-height: 300px;
-        overflow-y: auto;
-      }
-
-      .log-title {
-        color: #ccc;
-        font-size: 14px;
-        font-weight: bold;
-        margin-bottom: 10px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-      }
-
-      .log-content {
-        font-family: "Courier New", monospace;
-        font-size: 12px;
-        color: #00ff00;
-        background-color: #000;
-        padding: 10px;
-        border-radius: 5px;
-        min-height: 100px;
-        white-space: pre-wrap;
-        word-break: break-all;
-      }
-
-      .log-entry {
-        margin-bottom: 5px;
-        padding: 2px 0;
-        border-bottom: 1px solid #333;
-      }
-
-      .log-timestamp {
-        color: #888;
-        font-size: 10px;
-      }
-
-      .log-response {
-        color: #00ff00;
-      }
-
-      .log-error {
-        color: #ff4444;
-      }
     </style>
     <script>
       // API endpoint base URL
@@ -267,32 +214,6 @@
       // Polling interval for state updates
       let statePollingInterval = null;
       const POLLING_INTERVAL_MS = 1000; // 1 second
-      let logEntryCounter = 0;
-
-      // Logging functions
-      function addLogEntry(message, type = "response") {
-        const logContent = document.getElementById("logContent");
-        const timestamp = new Date().toLocaleTimeString();
-
-        const logEntry = document.createElement("div");
-        logEntry.className = `log-entry log-${type}`;
-        logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${message}`;
-
-        // Insert at the top (newest first)
-        logContent.insertBefore(logEntry, logContent.firstChild);
-
-        // Keep only last 50 entries
-        const entries = logContent.children;
-        if (entries.length > 50) {
-          logContent.removeChild(entries[entries.length - 1]);
-        }
-      }
-
-      function logServerResponse(endpoint, data, isError = false) {
-        const type = isError ? "error" : "response";
-        const message = JSON.stringify(data, null, 2);
-        addLogEntry(message, type);
-      }
 
       // Button press handler
       async function pressButton(buttonId) {
@@ -307,12 +228,10 @@
           const data = await response.json();
 
           if (response.ok) {
-            logServerResponse(`POST /press/${buttonId}`, data);
             // Visual feedback and refresh state from server
             showButtonFeedback(buttonId);
             pollState();
           } else {
-            logServerResponse(`POST /press/${buttonId}`, data, true);
             console.error(`Error pressing button ${buttonId}:`, data.error);
             showError(`Error: ${data.error}`);
           }
@@ -381,11 +300,9 @@
           const data = await response.json();
 
           if (response.ok) {
-            logServerResponse("GET /state (initial)", data);
             updateDisplay(data.current_value);
-            updateSleepState(data.is_device_asleep);
+            updateSleepState(data._is_device_asleep);
           } else {
-            logServerResponse("GET /state (initial)", data, true);
             console.error("Error loading state:", data.error);
           }
         } catch (error) {
@@ -400,11 +317,9 @@
           const data = await response.json();
 
           if (response.ok) {
-            logServerResponse("GET /state", data);
             updateDisplay(data.current_value);
-            updateSleepState(data.is_device_asleep);
+            updateSleepState(data._is_device_asleep);
           } else {
-            logServerResponse("GET /state", data, true);
             console.error("Error polling state:", data.error);
           }
         } catch (error) {
@@ -462,11 +377,6 @@
         <div class="panel-title">Extra buttons</div>
         <button class="p2-button" id="p2Btn">P2</button>
       </div>
-    </div>
-
-    <div class="log-panel">
-      <div class="log-title">Server Response Log</div>
-      <div class="log-content" id="logContent"></div>
     </div>
   </body>
 </html>
