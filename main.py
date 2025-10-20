@@ -20,6 +20,7 @@ from src import PiAluprofApp
 from src.config import Config
 from src.remote_state import RemoteState
 from src.gpio_controller import GPIOController
+from src.remote_controller import RemoteController
 
 
 def main():
@@ -36,14 +37,15 @@ def main():
     
     # Initialize all components
     config = Config()
+    gpio_controller = GPIOController(config)
     remote_state = RemoteState(
         state_file=config.STATE_FILE,
         max_value=config.MAX_VALUE
     )
-    gpio_controller = GPIOController(config)
+    remote_controller = RemoteController(gpio_controller, config, remote_state)
     
     # Create app with dependencies
-    app = PiAluprofApp(config, remote_state, gpio_controller)
+    app = PiAluprofApp(config, remote_controller)
     
     try:
         # Initialize GPIO if running on Raspberry Pi

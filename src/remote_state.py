@@ -53,8 +53,7 @@ class RemoteState:
         try:
             state_data = {
                 'current_value': value,
-                'timestamp': time.time(),
-                'max_value': self.max_value
+                'timestamp': time.time()
             }
             with open(self.state_file, 'w') as f:
                 json.dump(state_data, f, indent=2)

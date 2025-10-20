@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Display Controller</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #1a1a1a;
+        color: #ffffff;
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+        box-sizing: border-box;
+      }
+
+      .controller-container {
+        background-color: #2d2d2d;
+        border-radius: 15px;
+        padding: 30px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        border: 2px solid #444;
+        max-width: 400px;
+        width: 100%;
+      }
+
+      .screen {
+        background-color: #000;
+        border: 3px solid #555;
+        border-radius: 10px;
+        width: 200px;
+        height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 30px;
+        position: relative;
+        box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+      }
+
+      .screen.sleeping {
+        background-color: #111;
+      }
+
+      .screen.sleeping::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.8);
+        border-radius: 7px;
+      }
+
+      .display-number {
+        font-size: 48px;
+        font-weight: bold;
+        color: #00ff00;
+        text-shadow: 0 0 10px #00ff00;
+        font-family: "Courier New", monospace;
+      }
+
+      .screen.sleeping .display-number {
+        opacity: 0;
+      }
+
+      .game-pad {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-rows: 1fr 1fr 1fr;
+        gap: 10px;
+        width: 180px;
+        height: 180px;
+        margin: 0 auto 30px;
+      }
+
+      .game-button {
+        background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
+        border: 2px solid #555;
+        border-radius: 50%;
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.1s ease;
+        user-select: none;
+        width: 50px;
+        height: 50px;
+      }
+
+      .game-button:hover {
+        background: linear-gradient(145deg, #4a4a4a, #3a3a3a);
+        border-color: #666;
+        transform: translateY(-1px);
+      }
+
+      .game-button:active {
+        background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+        border-color: #444;
+        transform: translateY(1px);
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      .game-button.up {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      .game-button.left {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      .game-button.stop {
+        grid-column: 2;
+        grid-row: 2;
+        background: linear-gradient(145deg, #ff4444, #cc3333);
+        border-color: #ff6666;
+      }
+
+      .game-button.stop:hover {
+        background: linear-gradient(145deg, #ff5555, #dd4444);
+      }
+
+      .game-button.stop:active {
+        background: linear-gradient(145deg, #cc3333, #aa2222);
+      }
+
+      .game-button.right {
+        grid-column: 3;
+        grid-row: 2;
+      }
+
+      .game-button.bottom {
+        grid-column: 2;
+        grid-row: 3;
+      }
+
+      .control-panel {
+        background-color: #333;
+        border: 2px solid #555;
+        border-radius: 10px;
+        padding: 20px;
+        width: 100%;
+        max-width: 300px;
+        margin: 0 auto;
+      }
+
+      .panel-title {
+        text-align: center;
+        margin-bottom: 15px;
+        font-size: 16px;
+        font-weight: bold;
+        color: #ccc;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .p2-button {
+        background: linear-gradient(145deg, #4a4a4a, #3a3a3a);
+        border: 2px solid #666;
+        border-radius: 8px;
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 15px 30px;
+        transition: all 0.1s ease;
+        user-select: none;
+        width: 100%;
+        text-align: center;
+      }
+
+      .p2-button:hover {
+        background: linear-gradient(145deg, #5a5a5a, #4a4a4a);
+        border-color: #777;
+        transform: translateY(-1px);
+      }
+
+      .p2-button:active {
+        background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
+        border-color: #555;
+        transform: translateY(1px);
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      .status-indicator {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #00ff00;
+        box-shadow: 0 0 8px #00ff00;
+      }
+
+      .status-indicator.sleeping {
+        background-color: #ff6600;
+        box-shadow: 0 0 8px #ff6600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controller-container">
+      <div class="screen" id="screen">
+        <div class="status-indicator" id="statusIndicator"></div>
+        <div class="display-number" id="displayNumber">15</div>
+      </div>
+
+      <div class="game-pad">
+        <button class="game-button up" id="upBtn">UP</button>
+        <button class="game-button left" id="leftBtn">LEFT</button>
+        <button class="game-button stop" id="stopBtn">STOP</button>
+        <button class="game-button right" id="rightBtn">RIGHT</button>
+        <button class="game-button bottom" id="bottomBtn">DOWN</button>
+      </div>
+
+      <div class="control-panel">
+        <div class="panel-title">Control Panel</div>
+        <button class="p2-button" id="p2Btn">P2</button>
+      </div>
+    </div>
+  </body>
+</html>

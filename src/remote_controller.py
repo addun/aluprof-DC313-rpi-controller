@@ -10,20 +10,18 @@ from typing import Dict, Any
 class RemoteController:
     """Controller for handling remote control button presses."""
     
-    def __init__(self, gpio_controller: GPIOController, config: Config) -> None:
+    def __init__(self, gpio_controller: GPIOController, config: Config, remote_state: RemoteState) -> None:
         """
         Initialize the remote controller.
         
         Args:
             gpio_controller: GPIO controller instance for pin operations
             config: Configuration object containing pin mappings
+            remote_state: RemoteState instance for state management
         """
         self.gpio_controller = gpio_controller
         self.config = config
-        self.remote_state = RemoteState(
-            state_file=config.STATE_FILE,
-            max_value=config.MAX_VALUE
-        )
+        self.remote_state = remote_state
         self.last_action_time = 0  # Track when the last action was performed
         self.logger = logging.getLogger('RemoteController')
     
@@ -63,8 +61,8 @@ class RemoteController:
         self._update_action_time()
         return new_value
     
-    def press_middle_button(self) -> None:
-        """Press the middle button (STOP)."""
+    def press_stop_button(self) -> None:
+        """Press the stop button (STOP)."""
         self._wake_up_when_needed()
         self.gpio_controller.press_pin(self.config.PIN_MAP['STOP'])
         self._update_action_time()

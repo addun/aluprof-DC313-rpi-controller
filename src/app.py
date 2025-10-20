@@ -3,22 +3,19 @@ import threading
 import logging
 from flask import Flask, request, jsonify, Response, send_from_directory
 from typing import List, Dict, Any
-from .remote_state import RemoteState
-from .gpio_controller import GPIOController
+from .remote_controller import RemoteController
 from .config import Config
 
 
 class PiAluprofApp:
-    def __init__(self, config: Config, remote_state: RemoteState, gpio_controller: GPIOController) -> None:
+    def __init__(self, config: Config, remote_controller: RemoteController) -> None:
         self.logger = logging.getLogger('PiAluprofApp')
         self.logger.info("=== PiAluprofApp Starting ===")
         
         self.config = config
-        self.remote_state = remote_state
-        self.gpio_controller = gpio_controller
+        self.remote_controller = remote_controller
         self.app = Flask(__name__, template_folder='templates')
         self.state_lock = threading.Lock()
-        self.last_action_time = 0  # Track when the last action was performed
         self._setup_routes()
     
     def _setup_routes(self):
@@ -26,11 +23,12 @@ class PiAluprofApp:
         self.app.route('/state', methods=['GET'])(self.get_state)
         self.app.route('/sync', methods=['POST'])(self.sync_state)
         self.app.route('/actions', methods=['POST'])(self.process_actions)
+        self.app.route('/press/<button_id>', methods=['POST'])(self.press_button)
         self.app.route('/')(self.serve_index)
     
     def get_state(self):
         """Returns the current synchronized state of the display."""
-        return jsonify(self.remote_state.get_state_info())
+        return jsonify(self.remote_controller.get_state_info())
     
     def sync_state(self):
         """Manually sets the internal state value. POST Body: {"value": 5}"""
@@ -41,14 +39,14 @@ class PiAluprofApp:
             if new_value is None or not isinstance(new_value, int):
                 return jsonify({"error": "Invalid or missing 'value'. Must be an integer."}), 400
             
-            if not self.remote_state.set_value(new_value):
+            if not self.remote_controller.set_value(new_value):
                 return jsonify({"error": f"Invalid value. Must be between 0 and {self.config.MAX_VALUE}."}), 400
                 
             self.logger.info(f"STATE SYNCED: Current value manually set to {new_value}")
             
             return jsonify({
                 "status": "synchronized",
-                "new_value": self.remote_state.current_value
+                "new_value": self.remote_controller.get_current_value()
             }), 200
 
         except Exception as e:
@@ -74,8 +72,6 @@ class PiAluprofApp:
                 
                 results = []
 
-                self._wake_up_when_needed()
-
                 for action_dict in actions:
                     self.logger.debug(f"Processing action: {action_dict}")
                     
@@ -94,20 +90,21 @@ class PiAluprofApp:
                         results.append({"type": "error", "details": f"'nr' must be an integer (0-{self.config.MAX_VALUE})."})
                         continue
 
-                    goto_result = self._move_to_target(target_value)
+                    goto_result = self.remote_controller.move_to_target(target_value)
                     
                     # --- 2. Execute Action (UP/DOWN/STOP/DELAY) ---
                     
-                    # Map user's UP/DOWN/STOP to the actual PIN_MAP keys
-                    mapped_action = self.config.ACTION_ALIAS.get(action_name)
-
-                    if not mapped_action:
-                        results.append({"type": "error", "details": f"Invalid action: {action_name}. Valid actions: {list(self.config.ACTION_ALIAS.keys())}"})
+                    # Execute the action using remote controller methods
+                    if action_name == 'UP':
+                        self.remote_controller.press_up_button()
+                    elif action_name == 'DOWN':
+                        self.remote_controller.press_down_button()
+                    elif action_name == 'STOP':
+                        self.remote_controller.press_stop_button()
+                    else:
+                        results.append({"type": "error", "details": f"Invalid action: {action_name}. Valid actions: UP, DOWN, STOP"})
                         continue
                     
-                    # Press the manual pin (MOVE_UP, GO_DOWN, or STOP). This does NOT change the state value.
-                    self.gpio_controller.press_pin(self.config.PIN_MAP[mapped_action])
-                    self.last_action_time = time.time()
                     time.sleep(0.5) # Small delay to ensure action is registered
                     
                     results.append({
@@ -115,20 +112,61 @@ class PiAluprofApp:
                         "target_nr": target_value,
                         "action": action_name,
                         "goto_details": goto_result,
-                        "final_value": self.remote_state.current_value
+                        "final_value": self.remote_controller.get_current_value()
                     })
                 
 
 
                 return jsonify({
                     "status": "batch_completed",
-                    "current_state": self.remote_state.current_value,
+                    "current_state": self.remote_controller.get_current_value(),
                     "results": results
                 }), 200
 
             except Exception as e:
                 self.logger.error(f"API Error in process_actions: {e}")
                 return jsonify({"error": f"Invalid JSON format or internal server error: {e}"}), 500
+    
+    def press_button(self, button_id):
+        """Press a specific button by ID."""
+        with self.state_lock:
+            try:
+                button_id = button_id.upper()
+                self.logger.info(f"Button press request: {button_id}")
+                
+                # Map button IDs to remote controller methods
+                button_actions = {
+                    'UP': self.remote_controller.press_up_button,
+                    'DOWN': self.remote_controller.press_down_button,
+                    'LEFT': self.remote_controller.press_left_button,
+                    'RIGHT': self.remote_controller.press_right_button,
+                    'STOP': self.remote_controller.press_stop_button,
+                    'P2': self.remote_controller.press_p2_button
+                }
+                
+                if button_id not in button_actions:
+                    return jsonify({
+                        "error": f"Invalid button ID: {button_id}. Valid buttons: {list(button_actions.keys())}"
+                    }), 400
+                
+                # Execute the button press
+                result = button_actions[button_id]()
+                
+                # Handle buttons that return new values (LEFT/RIGHT)
+                response_data = {
+                    "status": "button_pressed",
+                    "button": button_id,
+                    "current_state": self.remote_controller.get_current_value()
+                }
+                
+                if result is not None:  # LEFT/RIGHT buttons return new value
+                    response_data["new_value"] = result
+                
+                return jsonify(response_data), 200
+                
+            except Exception as e:
+                self.logger.error(f"API Error in press_button: {e}")
+                return jsonify({"error": f"Internal server error: {e}"}), 500
     
     def serve_index(self):
         """Serves the index.html file from the templates directory."""
@@ -139,93 +177,10 @@ class PiAluprofApp:
         except Exception as e:
             return Response(f"Error serving index.html: {e}", status=500)
     
-    def _move_to_target(self, target: int) -> Dict[str, Any]:
-        """Calculates the shortest path to reach a specific target number and executes presses."""
-        current_value = self.remote_state.current_value
-        self.logger.debug(f"_move_to_target: current={current_value}, target={target}")
-
-        if not (0 <= target <= self.config.MAX_VALUE):
-            return {"error": f"Target {target} out of range (0-{self.config.MAX_VALUE}).", "status": "failed"}
-
-        if current_value == target:
-            self.logger.debug("Already at target - no movement needed")
-            return {"status": "already_at_target", "final_value": current_value, "steps_taken": 0}
-
-        # Calculate shortest path (using modulo arithmetic for wrap-around)
-        diff_increase = (target - current_value + self.config.MAX_VALUE + 1) % (self.config.MAX_VALUE + 1)
-        diff_decrease = (current_value - target + self.config.MAX_VALUE + 1) % (self.config.MAX_VALUE + 1)
-        
-        min_presses = min(diff_increase, diff_decrease)
-        self.logger.debug(f"Path calculation: increase={diff_increase}, decrease={diff_decrease}, min={min_presses}")
-
-        if diff_increase == min_presses:
-            direction_func = self._press_increase_step
-            direction_str = "INCREASE"
-        else:
-            direction_func = self._press_decrease_step
-            direction_str = "DECREASE"
-
-        self.logger.debug(f"Moving {direction_str} for {min_presses} steps")
-
-        # Execute Movement
-        steps_taken = 0
-        while steps_taken < min_presses:
-            direction_func()
-            steps_taken += 1
-            self.logger.debug(f"Step {steps_taken}: new value = {self.remote_state.current_value}")
-        
-        final_value = self.remote_state.current_value
-        self.logger.info(f"Navigation complete: {current_value} → {final_value} (target: {target})")
-        
-        return {
-            "status": "moved_to_target",
-            "target_reached": target,
-            "initial_value": current_value,
-            "final_value": final_value,
-            "steps_taken": steps_taken,
-            "direction": direction_str
-        }
-    
-    def _press_increase_step(self):
-        """Presses the INCREASE button (BCM 14) and updates the state (e.g., 15 -> 0)."""
-        self.gpio_controller.press_pin(self.config.PIN_MAP['INCREASE'])
-        
-        # State update happens ONLY on number change buttons
-        new_value = self.remote_state.increment()
-        
-        return new_value
-
-    def _press_decrease_step(self):
-        """Presses the DECREASE button (BCM 2) and updates the state (e.g., 0 -> 15)."""
-        self.gpio_controller.press_pin(self.config.PIN_MAP['DECREASE'])
-        
-        # State update happens ONLY on number change buttons
-        new_value = self.remote_state.decrement()
-        
-        return new_value
-    
-    def _is_device_asleep(self) -> bool:
-        """Check if the device is currently asleep based on time since last action."""
-        if self.last_action_time == 0:
-            return True  # Device starts asleep
-        
-        time_since_last_action = time.time() - self.last_action_time
-        return time_since_last_action >= self.config.GO_TO_SLEEP_DELAY_SEC
-    
-    def _wake_up_when_needed(self):
-        """Wake up the device if it's asleep."""
-        if self._is_device_asleep():
-            self.logger.info("Device is asleep - waking up...")
-            self.gpio_controller.press_pin(self.config.PIN_MAP['INCREASE'])
-            self.last_action_time = time.time()
-            time.sleep(self.config.WAKE_UP_DELAY_SEC)
-        else:
-            self.logger.debug("Device is already awake - continuing...")
-    
     def run(self, host='0.0.0.0', port=4000, debug=False):
         """Run the Flask application."""
         self.logger.info(f"Starting Flask API on port {port}...")
-        state_info = self.remote_state.get_state_info()
+        state_info = self.remote_controller.get_state_info()
         self.logger.info(f"Loaded State: {state_info['current_value']}. Range: 0-{state_info['max_value']}. State file: {state_info['state_file']}")
 
         self.app.run(host=host, port=port, debug=debug)
