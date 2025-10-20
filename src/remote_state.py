@@ -12,7 +12,7 @@ import threading
 from typing import Optional
 
 
-class StateManager:
+class RemoteState:
     """Manages persistent state for the display controller."""
     
     def __init__(self, state_file: str = 'display_state.json', max_value: int = 15):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pidupa Display Controller - Main Entry Point
+Aluprof Display Controller - Main Entry Point
 
 A Flask-based web application for controlling Raspberry Pi GPIO pins
 to interface with a display controller.
@@ -11,20 +11,43 @@ All application logic has been moved to the src/ directory for better organizati
 
 import sys
 import os
+import logging
 
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from src import PiAluprofApp
+from src.config import Config
+from src.remote_state import RemoteState
+from src.gpio_controller import GPIOController
 
 
 def main():
     """Main application entry point."""
-    app = PiAluprofApp()
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),  # Console output
+        ],
+        force=True  # Override any existing logging config
+    )
+    
+    # Initialize all components
+    config = Config()
+    remote_state = RemoteState(
+        state_file=config.STATE_FILE,
+        max_value=config.MAX_VALUE
+    )
+    gpio_controller = GPIOController(config)
+    
+    # Create app with dependencies
+    app = PiAluprofApp(config, remote_state, gpio_controller)
     
     try:
         # Initialize GPIO if running on Raspberry Pi
-        if app.initialize_gpio():
+        if gpio_controller.initialize_gpio():
             print("GPIO initialized successfully.")
         else:
             print("Running in simulation mode (GPIO not available).")
@@ -38,7 +61,7 @@ def main():
         print(f"Failed to start application: {e}")
     finally:
         # Cleanup GPIO resources
-        app.cleanup_gpio()
+        gpio_controller.cleanup_gpio()
 
 
 if __name__ == '__main__':

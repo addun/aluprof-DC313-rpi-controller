@@ -5,7 +5,7 @@ This module handles all GPIO operations including pin configuration and control.
 """
 
 import time
-import sys
+import logging
 
 try:
     import RPi.GPIO as GPIO
@@ -26,11 +26,12 @@ class GPIOController:
         """
         self.config = config
         self._gpio_available = GPIO is not None
+        self.logger = logging.getLogger('GPIOController')
     
     def configure_pins(self):
         """Configure all GPIO pins as outputs with inactive state."""
         if not self._gpio_available:
-            print("[WARNING] GPIO not available - running in simulation mode", file=sys.stdout)
+            self.logger.warning("GPIO not available - running in simulation mode")
             return
         
         for pin in self.config.PIN_MAP.values():
@@ -60,5 +61,29 @@ class GPIOController:
             time.sleep(self.config.PRESS_DELAY_SEC)
         else:
             # Simulation for testing on a non-Pi environment
-            print(f"[SIMULATE] Pin {pin} pressed for {press_duration}s.", file=sys.stdout)
+            self.logger.debug(f"[SIMULATE] Pin {pin} pressed for {press_duration}s.")
             time.sleep(self.config.PRESS_DELAY_SEC)
+    
+    def initialize_gpio(self) -> bool:
+        """Initialize GPIO configuration."""
+        if not self._gpio_available:
+            self.logger.warning("GPIO module not available - running in simulation mode")
+            return False
+        
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setwarnings(False)
+            self.configure_pins()
+            self.logger.info("GPIO initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to initialize GPIO: {e}")
+            return False
+    
+    def cleanup_gpio(self) -> None:
+        """Cleanup GPIO resources."""
+        if self._gpio_available:
+            self.logger.info("Cleaning up GPIO...")
+            GPIO.cleanup()
+        else:
+            self.logger.info("GPIO cleanup skipped - running in simulation mode")
