@@ -135,12 +135,52 @@ class RemoteController:
     
     # Private methods
     def _is_device_asleep(self) -> bool:
-        """Check if the device is currently asleep based on time since last action."""
+        """Check if the device is currently asleep based on time since last action.
+        
+        Uses a threshold buffer to ensure the device is definitely asleep,
+        avoiding uncertainty when timing is very close to the sleep delay.
+        
+        Complete Logic:
+        - 0 to (8-1)s = 0-7s: Device is definitely awake, return False immediately
+        - (8-1)s to (8+1)s = 7-9s: Uncertain zone (approaching/transitioning to sleep)
+          -> WAIT until 9s total elapsed, then return True (device is asleep)
+        - (8+1)s+ = 9s+: Device is definitely asleep, return True immediately
+        
+        Configuration:
+        - GO_TO_SLEEP_DELAY_SEC = 8s (when device starts sleeping)
+        - SLEEP_THRESHOLD_SEC = 1s (buffer for uncertainty)
+        - Uncertain zone = [7s, 9s) where we wait to be certain
+        
+        Examples:
+        - At 6.5s: Return False (clearly awake)
+        - At 7.3s: Wait 1.7s until 9s total, then return True
+        - At 8.2s: Wait 0.8s until 9s total, then return True  
+        - At 9.1s: Return True immediately (clearly asleep)
+        """
+        sleep_delay = self.config.GO_TO_SLEEP_DELAY_SEC
+        threshold = self.config.SLEEP_THRESHOLD_SEC
+        
         if self.last_action_time == 0:
-            return True  # Device starts asleep
+            # Device starts in unknown state - wait to be certain it's asleep
+            wait_time = sleep_delay + threshold
+            self.logger.debug(f"Device in unknown state - waiting {wait_time:.1f}s to ensure it's asleep")
+            time.sleep(wait_time)
+            return True
         
         time_since_last_action = time.time() - self.last_action_time
-        return time_since_last_action >= self.config.GO_TO_SLEEP_DELAY_SEC
+        
+        uncertain_zone_start = sleep_delay - threshold
+        uncertain_zone_end = sleep_delay + threshold
+        
+        # If we're approaching or past sleep time but not yet at threshold, wait
+        if uncertain_zone_start <= time_since_last_action <= uncertain_zone_end:
+            # We're in the uncertain zone - wait until we're sure
+            wait_time = uncertain_zone_end - time_since_last_action
+            self.logger.debug(f"Device approaching/in sleep transition - waiting {wait_time:.1f}s to be certain")
+            time.sleep(wait_time)
+            return True
+        
+        return time_since_last_action >= uncertain_zone_end
     
     def _wake_up_when_needed(self) -> None:
         """Wake up the device if it's asleep."""
