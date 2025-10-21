@@ -64,10 +64,6 @@
         font-family: "Courier New", monospace;
       }
 
-      .screen.sleeping .display-number {
-        opacity: 0;
-      }
-
       .game-pad {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
@@ -174,7 +170,8 @@
         padding: 15px 30px;
         transition: all 0.1s ease;
         user-select: none;
-        width: auto;
+        width: 100%;
+        display: block;
         text-align: center;
       }
 
@@ -205,6 +202,123 @@
       .status-indicator.sleeping {
         background-color: #ff6600;
         box-shadow: 0 0 8px #ff6600;
+      }
+
+      .api-panel {
+        background-color: #2d2d2d;
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        border: 2px solid #444;
+        max-width: 400px;
+        width: 100%;
+        margin-top: 20px;
+      }
+
+      .api-section {
+        margin-bottom: 20px;
+      }
+
+      .api-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .api-title {
+        color: #ccc;
+        font-size: 14px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .input-group {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .input-group input,
+      .input-group select {
+        background-color: #1a1a1a;
+        border: 2px solid #555;
+        border-radius: 5px;
+        color: #ffffff;
+        padding: 8px 12px;
+        font-size: 14px;
+        outline: none;
+      }
+
+      .input-group input:focus,
+      .input-group select:focus {
+        border-color: #00ff00;
+      }
+
+      .input-group input {
+        flex: 1;
+      }
+
+      .input-group select {
+        min-width: 100px;
+      }
+
+      .api-button {
+        background: linear-gradient(145deg, #00aa00, #008800);
+        border: 2px solid #00cc00;
+        border-radius: 8px;
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 10px 20px;
+        transition: all 0.1s ease;
+        user-select: none;
+        width: 100%;
+        text-align: center;
+      }
+
+      .api-button:hover {
+        background: linear-gradient(145deg, #00cc00, #00aa00);
+        border-color: #00ff00;
+        transform: translateY(-1px);
+      }
+
+      .api-button:active {
+        background: linear-gradient(145deg, #008800, #006600);
+        border-color: #00aa00;
+        transform: translateY(1px);
+      }
+
+      .sync-button {
+        background: linear-gradient(145deg, #4466cc, #335599);
+        border-color: #5577dd;
+      }
+
+      .sync-button:hover {
+        background: linear-gradient(145deg, #5577dd, #4466cc);
+        border-color: #6688ee;
+      }
+
+      .sync-button:active {
+        background: linear-gradient(145deg, #335599, #224466);
+        border-color: #4466cc;
+      }
+
+      @media (max-width: 480px) {
+        .api-panel {
+          padding: 15px;
+          max-width: calc(100% - 20px);
+          margin-top: 15px;
+        }
+
+        .input-group {
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .input-group select {
+          min-width: unset;
+        }
       }
     </style>
     <script>
@@ -301,7 +415,7 @@
 
           if (response.ok) {
             updateDisplay(data.current_value);
-            updateSleepState(data._is_device_asleep);
+            updateSleepState(data.is_device_asleep);
           } else {
             console.error("Error loading state:", data.error);
           }
@@ -318,7 +432,7 @@
 
           if (response.ok) {
             updateDisplay(data.current_value);
-            updateSleepState(data._is_device_asleep);
+            updateSleepState(data.is_device_asleep);
           } else {
             console.error("Error polling state:", data.error);
           }
@@ -344,6 +458,84 @@
       }
 
       // Initialize event listeners when page loads
+      // Sync state function
+      async function syncState() {
+        const value = document.getElementById("syncValue").value;
+        if (!value || value === "") {
+          alert("Please enter a value (0-15)");
+          return;
+        }
+
+        const numValue = parseInt(value);
+        if (numValue < 0 || numValue > 15) {
+          alert("Value must be between 0 and 15");
+          return;
+        }
+
+        try {
+          const response = await fetch(`${API_BASE}/sync`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ value: numValue }),
+          });
+
+          if (response.ok) {
+            document.getElementById("syncValue").value = "";
+            pollState(); // Refresh state
+          } else {
+            const error = await response.json();
+            alert(`Sync failed: ${error.error}`);
+          }
+        } catch (error) {
+          alert("Network error during sync");
+        }
+      }
+
+      // Execute action function
+      async function executeAction() {
+        const nr = document.getElementById("actionNr").value;
+        const action = document.getElementById("actionType").value;
+
+        if (!nr || nr === "") {
+          alert("Please enter a number (0-15)");
+          return;
+        }
+
+        if (!action || action === "") {
+          alert("Please select an action");
+          return;
+        }
+
+        const numNr = parseInt(nr);
+        if (numNr < 0 || numNr > 15) {
+          alert("Number must be between 0 and 15");
+          return;
+        }
+
+        try {
+          const response = await fetch(`${API_BASE}/actions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify([{ nr: numNr, action: action }]),
+          });
+
+          if (response.ok) {
+            document.getElementById("actionNr").value = "";
+            document.getElementById("actionType").value = "";
+            pollState(); // Refresh state
+          } else {
+            const error = await response.json();
+            alert(`Action failed: ${error.error}`);
+          }
+        } catch (error) {
+          alert("Network error during action");
+        }
+      }
+
       document.addEventListener("DOMContentLoaded", function () {
         loadCurrentState();
         startStatePolling();
@@ -376,6 +568,30 @@
       <div class="control-panel">
         <div class="panel-title">Extra buttons</div>
         <button class="p2-button" id="p2Btn">P2</button>
+      </div>
+    </div>
+
+    <div class="api-panel">
+      <div class="api-section">
+        <div class="api-title">Sync State</div>
+        <div class="input-group">
+          <input type="number" id="syncValue" min="0" max="15" placeholder="Value (0-15)" />
+        </div>
+        <button class="api-button sync-button" onclick="syncState()">SYNC</button>
+      </div>
+
+      <div class="api-section">
+        <div class="api-title">Execute Action</div>
+        <div class="input-group">
+          <input type="number" id="actionNr" min="0" max="15" placeholder="Device nr (0-15)" />
+          <select id="actionType">
+            <option value="">Action</option>
+            <option value="UP">UP</option>
+            <option value="DOWN">DOWN</option>
+            <option value="STOP">STOP</option>
+          </select>
+        </div>
+        <button class="api-button" onclick="executeAction()">EXECUTE</button>
       </div>
     </div>
   </body>
