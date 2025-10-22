@@ -1,5 +1,5 @@
 """
-Pidupa Display Controller Package
+Aluprof Display Controller Package
 
 A Flask-based web application for controlling Raspberry Pi GPIO pins
 to interface with a display controller.

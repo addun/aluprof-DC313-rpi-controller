@@ -1,16 +1,16 @@
-# Aluprof Display Controller
+# Aluprof DC313 RPi Controller
 
-A Flask-based web application for controlling Raspberry Pi GPIO pins to interface with a display controller.
+A Flask-based web application for controlling Raspberry Pi GPIO pins to interact with a Aluprof DC313
 
 ## Installation
 
-1. **Clone/Download the project**
-2. **Create virtual environment:**
+1. Clone/Download the project
+2. Create virtual environment
    ```bash
    python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
-3. **Install dependencies:**
+3. Install dependencies
    ```bash
    pip install -r requirements.txt
    ```
