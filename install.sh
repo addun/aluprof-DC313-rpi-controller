@@ -37,11 +37,6 @@ fi
 
 echo "✅ Git is available and this is a git repository"
 
-# Update the service file and startup script with the correct paths
-echo "📝 Updating service file and startup script with correct paths..."
-sed -i "s|__APP_DIR__|$APP_DIR|g" "$SERVICE_FILE"
-sed -i "s|__APP_DIR__|$APP_DIR|g" "start.sh"
-
 # Make startup script executable
 echo "🔧 Making startup script executable..."
 chmod +x start.sh

@@ -5,7 +5,7 @@
 
 set -e  # Exit on any error
 
-APP_DIR="__APP_DIR__"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$APP_DIR"
 
 echo "$(date): Starting aluprof-dc313-rpi-controller..."
@@ -14,6 +14,10 @@ echo "$(date): Starting aluprof-dc313-rpi-controller..."
 echo "$(date): Pulling latest changes from repository..."
 git fetch origin
 git reset --hard origin/main
+
+# Re-apply path substitutions after git reset
+echo "$(date): Updating paths in service file..."
+sed -i "s|__APP_DIR__|$APP_DIR|g" "aluprof-dc313-rpi-controller.service"
 
 # Install/update Python dependencies in case requirements.txt changed
 echo "$(date): Installing/updating Python dependencies..."
