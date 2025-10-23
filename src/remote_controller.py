@@ -163,6 +163,7 @@ class RemoteController:
         if self.last_action_time == 0:
             # Device starts in unknown state - wait to be certain it's asleep
             wait_time = sleep_delay + threshold
+            self.last_action_time = time.time()
             self.logger.debug(f"Device in unknown state - waiting {wait_time:.1f}s to ensure it's asleep")
             time.sleep(wait_time)
             return True

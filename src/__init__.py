@@ -1,5 +1,5 @@
 """
-Aluprof Display Controller Package
+Aluprof DC313 RPi Controller Package
 
 A Flask-based web application for controlling Raspberry Pi GPIO pins
 to interface with a display controller.

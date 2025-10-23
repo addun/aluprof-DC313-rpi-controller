@@ -1,10 +1,11 @@
 import time
 import threading
 import logging
-from flask import Flask, request, jsonify, Response, send_from_directory
+from flask import Flask, request, jsonify, Response, render_template
 from typing import List, Dict, Any
 from .remote_controller import RemoteController
 from .config import Config
+from .git_utils import get_git_info
 
 
 class PiAluprofApp:
@@ -16,6 +17,11 @@ class PiAluprofApp:
         self.remote_controller = remote_controller
         self.app = Flask(__name__, template_folder='templates')
         self.state_lock = threading.Lock()
+        
+        # Get git info once at startup
+        self.git_info = get_git_info()
+        self.logger.info(f"Git info: {self.git_info}")
+        
         self._setup_routes()
     
     def _setup_routes(self):
@@ -171,13 +177,12 @@ class PiAluprofApp:
                 return jsonify({"error": f"Internal server error: {e}"}), 500
     
     def serve_index(self):
-        """Serves the index.html file from the templates directory."""
+        """Serves the controller page with git information."""
         try:
-            return send_from_directory('templates', 'controller.html')
-        except FileNotFoundError:
-            return Response("Error: index.html not found. Please ensure the file is in the templates directory.", status=404)
+            return render_template('controller.html', git_info=self.git_info)
         except Exception as e:
-            return Response(f"Error serving index.html: {e}", status=500)
+            self.logger.error(f"Error serving controller page: {e}")
+            return Response(f"Error serving controller page: {e}", status=500)
     
     def run(self, host='0.0.0.0', port=4000, debug=False):
         """Run the Flask application."""

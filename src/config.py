@@ -1,5 +1,5 @@
 """
-Configuration Module for Pidupa Display Controller
+Configuration Module for Aluprof DC313 RPi Controller
 
 This module contains all configuration constants and settings for the application.
 """
@@ -10,7 +10,7 @@ class Config:
     
     # --- Core Configuration ---
     MAX_VALUE = 15
-    STATE_FILE = 'display_state.json'
+    STATE_FILE = 'storage/display_state.json'
     
     # --- Timing Configuration ---
     PRESS_DELAY_SEC = 0.1  # Delay between presses to allow the PIC chip to register input

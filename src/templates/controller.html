@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Display Controller</title>
+    <title>Aluprof DC313 RPi Controller</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -213,6 +213,32 @@
         max-width: 400px;
         width: 100%;
         margin-top: 20px;
+      }
+
+      .version-info {
+        background-color: #1a1a1a;
+        border-radius: 8px;
+        padding: 10px 15px;
+        margin-top: 15px;
+        border: 1px solid #333;
+        text-align: center;
+        font-size: 12px;
+        color: #888;
+        font-family: 'Courier New', monospace;
+      }
+
+      .version-info .commit-hash {
+        color: #00ff00;
+        font-weight: bold;
+      }
+
+      .version-info .commit-date {
+        color: #ccc;
+      }
+
+      .version-info .branch-name {
+        color: #66aaff;
+        font-style: italic;
       }
 
       .api-section {
@@ -592,6 +618,22 @@
           </select>
         </div>
         <button class="api-button" onclick="executeAction()">EXECUTE</button>
+      </div>
+      
+      <div class="version-info">
+        {% if git_info.commit_hash %}
+          <div>
+            <span class="commit-hash">{{ git_info.commit_hash }}</span>
+            {% if git_info.commit_date %}
+              <span class="commit-date">{{ git_info.commit_date }}</span>
+            {% endif %}
+          </div>
+          {% if git_info.branch %}
+            <div class="branch-name">{{ git_info.branch }}</div>
+          {% endif %}
+        {% else %}
+          <div class="commit-date">Git info unavailable</div>
+        {% endif %}
       </div>
     </div>
   </body>

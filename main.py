@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Aluprof Display Controller - Main Entry Point
+Aluprof DC313 RPi Controller - Main Entry Point
 
 A Flask-based web application for controlling Raspberry Pi GPIO pins
 to interface with a display controller.

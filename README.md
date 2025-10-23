@@ -30,7 +30,7 @@ python3 main.py
 The application will:
 
 - Start on `http://0.0.0.0:4000` (accessible from local network)
-- Load previous state from `display_state.json`
+- Load previous state from `storage`
 - Initialize GPIO (on Raspberry Pi) or run in simulation mode
 
 ### API Endpoints

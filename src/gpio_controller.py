@@ -1,5 +1,5 @@
 """
-GPIO Controller Module for Pidupa Display Controller
+GPIO Controller Module for Aluprof DC313 RPi Controller
 
 This module handles all GPIO operations including pin configuration and control.
 """

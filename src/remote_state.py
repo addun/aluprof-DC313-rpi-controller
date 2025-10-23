@@ -15,7 +15,7 @@ from typing import Optional
 class RemoteState:
     """Manages persistent state for the display controller."""
     
-    def __init__(self, state_file: str = 'display_state.json', max_value: int = 15):
+    def __init__(self, state_file: str, max_value: int):
         """
         Initialize the state manager.
         
@@ -27,6 +27,9 @@ class RemoteState:
         self.max_value = max_value
         self._current_value = 0
         self._lock = threading.Lock()  # Thread safety for concurrent access
+        
+        # Ensure storage directory exists
+        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         
         # Load initial state
         self._current_value = self._load_from_file()
