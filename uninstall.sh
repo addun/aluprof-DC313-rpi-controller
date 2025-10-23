@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Aluprof Display Controller - Uninstallation Script
+# Aluprof DC313 RPi Controller - Uninstallation Script
 # This script removes the systemd service
 
 set -e  # Exit on any error
 
-SERVICE_NAME="aluprof"
+SERVICE_NAME="aluprof-dc313-rpi-controller"
 
 echo "🛑 Uninstalling Aluprof DC313 RPi Controller service..."
 

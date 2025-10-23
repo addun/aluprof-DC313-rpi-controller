@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Aluprof DC313 RPi Controller - Startup Script
+# aluprof-dc313-rpi-controller - Startup Script
 # This script pulls the latest changes and starts the application
 
 set -e  # Exit on any error
@@ -8,7 +8,7 @@ set -e  # Exit on any error
 APP_DIR="__APP_DIR__"
 cd "$APP_DIR"
 
-echo "$(date): Starting Aluprof DC313 RPi Controller..."
+echo "$(date): Starting aluprof-dc313-rpi-controller..."
 
 # Pull latest changes from repository
 echo "$(date): Pulling latest changes from repository..."

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Aluprof Display Controller - Installation Script
+# Aluprof DC313 RPi Controller - Installation Script
 # This script sets up the application to run automatically on Raspberry Pi boot
 
 set -e  # Exit on any error
@@ -9,7 +9,7 @@ echo "🚀 Installing Aluprof DC313 RPi Controller as a system service..."
 
 # Get the current directory (where the script is located)
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="aluprof"
+SERVICE_NAME="aluprof-dc313-rpi-controller"
 SERVICE_FILE="${SERVICE_NAME}.service"
 
 echo "📁 Application directory: $APP_DIR"
