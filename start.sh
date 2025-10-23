@@ -21,4 +21,4 @@ echo "$(date): Installing/updating Python dependencies..."
 
 # Start the application
 echo "$(date): Starting the application..."
-żexec ./venv/bin/python main.py
+exec ./venv/bin/python main.py
