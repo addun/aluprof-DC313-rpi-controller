@@ -15,6 +15,9 @@ echo "$(date): Pulling latest changes from repository..."
 git fetch origin
 git reset --hard origin/main
 
+# Restore execute permission after git reset
+chmod +x start.sh
+
 # Re-apply path substitutions after git reset
 echo "$(date): Updating paths in service file..."
 sed -i "s|__APP_DIR__|$APP_DIR|g" "aluprof-dc313-rpi-controller.service"
