@@ -32,45 +32,43 @@ def main():
         handlers=[
             logging.StreamHandler(),  # Console output
         ],
-        force=True  # Override any existing logging config
+        force=True
     )
     
-    # Initialize all components
+    logger = logging.getLogger('Main')
+    
     config = Config()
     gpio_controller = GPIOController(config)
     remote_state = RemoteState(
-        state_file=config.STATE_FILE,
         max_value=config.MAX_VALUE
     )
     remote_controller = RemoteController(gpio_controller, config, remote_state)
     
-    # Create app with dependencies
     app = PiAluprofApp(config, remote_controller)
     
     try:
-        # Initialize GPIO if running on Raspberry Pi
         if gpio_controller.initialize_gpio():
-            print("GPIO initialized successfully.")
+            logger.info("GPIO initialized successfully.")
         else:
-            print("Running in simulation mode (GPIO not available).")
+            logger.info("Running in simulation mode (GPIO not available).")
         
-        # Perform automatic device reset on startup to ensure synchronization
-        print("Performing automatic device reset on startup...")
+        logger.info("Performing automatic device reset on startup...")
         reset_result = remote_controller.reset_device()
         if reset_result["success"]:
-            print(f"Automatic reset successful - device synchronized to channel 01")
+            logger.info("Automatic reset successful - device synchronized to channel 01")
         else:
-            print(f"Automatic reset failed: {reset_result.get('error', 'Unknown error')}")
+            logger.error(f"Automatic reset failed: {reset_result.get('error', 'Unknown error')}")
         
-        # Run the Flask application
+        logger.info("Starting Flask application on 0.0.0.0:4000")
         app.run(host='0.0.0.0', port=4000, debug=False)
         
     except KeyboardInterrupt:
-        print("\nShutdown requested by user.")
+        logger.info("Shutdown requested by user.")
     except Exception as e:
-        print(f"Failed to start application: {e}")
+        logger.error(f"Failed to start application: {e}")
     finally:
         # Cleanup GPIO resources
+        logger.info("Cleaning up resources...")
         gpio_controller.cleanup_gpio()
 
 

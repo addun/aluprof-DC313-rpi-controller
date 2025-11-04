@@ -10,7 +10,6 @@ class Config:
     
     # --- Core Configuration ---
     MAX_VALUE = 15
-    STATE_FILE = 'storage/display_state.json'
     
     # --- Timing Configuration ---
     PRESS_DELAY_SEC = 0.1           # Delay between presses to allow the PIC chip to register input
