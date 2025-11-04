@@ -16,7 +16,7 @@ class PiAluprofApp:
         self.config = config
         self.remote_controller = remote_controller
         self.app = Flask(__name__, template_folder='templates')
-        self.state_lock = threading.Lock()
+        self.device_action_lock = threading.Lock()
         
         # Get git info once at startup
         self.git_info = get_git_info()
@@ -27,7 +27,6 @@ class PiAluprofApp:
     def _setup_routes(self):
         """Setup Flask routes."""
         self.app.route('/state', methods=['GET'])(self.get_state)
-        self.app.route('/sync', methods=['POST'])(self.sync_state)
         self.app.route('/actions', methods=['POST'])(self.process_actions)
         self.app.route('/press/<button_id>', methods=['POST'])(self.press_button)
         self.app.route('/reset', methods=['POST'])(self.reset_device)
@@ -39,27 +38,7 @@ class PiAluprofApp:
         state_info['is_device_asleep'] = self.remote_controller._is_device_asleep()
         return jsonify(state_info)
     
-    def sync_state(self):
-        """Manually sets the internal state value. POST Body: {"value": 5}"""
-        try:
-            data = request.get_json()
-            new_value = data.get('value')
-            
-            if new_value is None or not isinstance(new_value, int):
-                return jsonify({"error": "Invalid or missing 'value'. Must be an integer."}), 400
-            
-            if not self.remote_controller.set_value(new_value):
-                return jsonify({"error": f"Invalid value. Must be between 0 and {self.config.MAX_VALUE}."}), 400
-                
-            self.logger.info(f"STATE SYNCED: Current value manually set to {new_value}")
-            
-            return jsonify({
-                "status": "synchronized",
-                "new_value": self.remote_controller.get_current_value()
-            }), 200
 
-        except Exception as e:
-            return jsonify({"error": f"Invalid JSON format or internal error: {e}"}), 400
     
     def process_actions(self):
         """
@@ -73,7 +52,7 @@ class PiAluprofApp:
           {"nr": 1, "action": "STOP"}     // 3. Press STOP (BCM 4).
         ]
         """
-        with self.state_lock:
+        with self.device_action_lock:
             try:
                 actions: List[Dict[str, Any]] = request.get_json()
                 if not isinstance(actions, list):
@@ -138,7 +117,7 @@ class PiAluprofApp:
     
     def press_button(self, button_id):
         """Press a specific button by ID."""
-        with self.state_lock:
+        with self.device_action_lock:
             try:
                 button_id = button_id.upper()
                 self.logger.info(f"Button press request: {button_id}")
@@ -179,7 +158,7 @@ class PiAluprofApp:
     
     def reset_device(self):
         """Reset the device to its default state (channel 01)."""
-        with self.state_lock:
+        with self.device_action_lock:
             try:
                 self.logger.info("Device reset requested via API")
                 
@@ -211,6 +190,6 @@ class PiAluprofApp:
         """Run the Flask application."""
         self.logger.info(f"Starting Flask API on port {port}...")
         state_info = self.remote_controller.get_state_info()
-        self.logger.info(f"Loaded State: {state_info['current_value']}. Range: 0-{state_info['max_value']}. State file: {state_info['state_file']}")
+        self.logger.info(f"Loaded State: {state_info['current_value']}. Range: 0-{state_info['max_value']}")
 
         self.app.run(host=host, port=port, debug=debug)

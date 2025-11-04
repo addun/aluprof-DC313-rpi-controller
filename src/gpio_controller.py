@@ -47,10 +47,10 @@ class GPIOController:
                 break
         
         if button_name:
-            press_duration = self.config.PRESS_DURATION_MAP.get(button_name, 0.1)
+            press_duration = self.config.PRESS_DURATION_MAP.get(button_name, self.config.DEFAULT_PRESS_DURATION)
         else:
-            press_duration = 0.1  # Default fallback
-            
+            press_duration = self.config.DEFAULT_PRESS_DURATION  
+
         if self._gpio_available:
             # 1. Activate the relay (press the button)
             GPIO.output(pin, self.config.ACTIVE_STATE)

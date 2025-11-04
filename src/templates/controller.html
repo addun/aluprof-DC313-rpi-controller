@@ -360,21 +360,6 @@
         transform: translateY(1px);
       }
 
-      .sync-button {
-        background: linear-gradient(145deg, #4466cc, #335599);
-        border-color: #5577dd;
-      }
-
-      .sync-button:hover {
-        background: linear-gradient(145deg, #5577dd, #4466cc);
-        border-color: #6688ee;
-      }
-
-      .sync-button:active {
-        background: linear-gradient(145deg, #335599, #224466);
-        border-color: #4466cc;
-      }
-
       @media (max-width: 480px) {
         .input-group {
           flex-direction: column;
@@ -411,11 +396,9 @@
             showButtonFeedback(buttonId);
             pollState();
           } else {
-            console.error(`Error pressing button ${buttonId}:`, data.error);
             showError(`Error: ${data.error}`);
           }
         } catch (error) {
-          console.error(`Network error pressing button ${buttonId}:`, error);
           showError("Network error - check connection");
         }
       }
@@ -455,20 +438,6 @@
 
       // Reset device function
       async function resetDevice() {
-        // Confirmation dialog
-        const confirmed = confirm(
-          "Are you sure you want to reset the device?\n\n" +
-            "This will:\n" +
-            "• Power cycle the physical controller\n" +
-            "• Reset the device to channel 01\n" +
-            "• Synchronize the software state\n\n" +
-            "Click OK to continue or Cancel to abort."
-        );
-
-        if (!confirmed) {
-          return;
-        }
-
         const statusIndicator = document.getElementById("statusIndicator");
         const resetButton = document.getElementById("resetBtn");
 
@@ -477,8 +446,6 @@
           statusIndicator.classList.add("resetting");
           resetButton.disabled = true;
           resetButton.textContent = "RESETTING...";
-
-          console.log("Starting device reset...");
 
           const response = await fetch(`${API_BASE}/reset`, {
             method: "POST",
@@ -490,23 +457,16 @@
           const data = await response.json();
 
           if (response.ok && data.success) {
-            console.log("Device reset successful:", data);
-
             // Update display to show new state
             updateDisplay(data.current_value);
-
-            // Show success message
-            alert("Device reset successful!\nController synchronized to channel 01.");
 
             // Refresh state from server
             pollState();
           } else {
-            console.error("Device reset failed:", data);
             showError(`Reset failed: ${data.error || "Unknown error"}`);
             alert(`Device reset failed:\n${data.error || "Unknown error"}`);
           }
         } catch (error) {
-          console.error("Network error during reset:", error);
           showError("Network error during reset");
           alert("Network error during device reset.\nPlease check your connection and try again.");
         } finally {
@@ -520,7 +480,6 @@
       // Show error message
       function showError(message) {
         // Simple error display - could be enhanced with a proper notification system
-        console.error(message);
 
         // Flash the status indicator red briefly
         const statusIndicator = document.getElementById("statusIndicator");
@@ -546,11 +505,8 @@
             updateDisplay(data.current_value);
             updateSleepState(data.is_device_asleep);
           } else {
-            console.error("Error loading state:", data.error);
           }
-        } catch (error) {
-          console.error("Network error loading state:", error);
-        }
+        } catch (error) {}
       }
 
       // Poll server for current state
@@ -563,11 +519,8 @@
             updateDisplay(data.current_value);
             updateSleepState(data.is_device_asleep);
           } else {
-            console.error("Error polling state:", data.error);
           }
-        } catch (error) {
-          console.error("Network error polling state:", error);
-        }
+        } catch (error) {}
       }
 
       // Start state polling
@@ -587,40 +540,6 @@
       }
 
       // Initialize event listeners when page loads
-      // Sync state function
-      async function syncState() {
-        const value = document.getElementById("syncValue").value;
-        if (!value || value === "") {
-          alert("Please enter a value (0-15)");
-          return;
-        }
-
-        const numValue = parseInt(value);
-        if (numValue < 0 || numValue > 15) {
-          alert("Value must be between 0 and 15");
-          return;
-        }
-
-        try {
-          const response = await fetch(`${API_BASE}/sync`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ value: numValue }),
-          });
-
-          if (response.ok) {
-            document.getElementById("syncValue").value = "";
-            pollState(); // Refresh state
-          } else {
-            const error = await response.json();
-            alert(`Sync failed: ${error.error}`);
-          }
-        } catch (error) {
-          alert("Network error during sync");
-        }
-      }
 
       // Execute action function
       async function executeAction() {
@@ -703,14 +622,6 @@
     </div>
 
     <div class="api-panel">
-      <div class="api-section">
-        <div class="api-title">Sync State</div>
-        <div class="input-group">
-          <input type="number" id="syncValue" min="0" max="15" placeholder="Value (0-15)" />
-        </div>
-        <button class="api-button sync-button" onclick="syncState()">SYNC</button>
-      </div>
-
       <div class="api-section">
         <div class="api-title">Execute Action</div>
         <div class="input-group">
