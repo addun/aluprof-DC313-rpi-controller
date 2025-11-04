@@ -64,6 +64,46 @@ class GPIOController:
             self.logger.debug(f"[SIMULATE] Pin {pin} pressed for {press_duration}s.")
             time.sleep(self.config.PRESS_DELAY_SEC)
     
+    def reset_device(self) -> bool:
+        """
+        Reset the device by setting all pins LOW, waiting for configured duration, then restoring inactive state.
+        
+        Returns:
+            bool: True if reset was successful, False otherwise
+        """
+        try:
+            if self._gpio_available:
+                self.logger.info("Starting device reset - setting all pins LOW")
+                
+                # Set all pins LOW (activates all relays for active-low configuration)
+                for pin in self.config.PIN_MAP.values():
+                    GPIO.output(pin, GPIO.LOW)
+                
+                # Wait for configured reset duration
+                self.logger.info(f"Waiting {self.config.RESET_POWER_OFF_SEC} seconds with all pins LOW")
+                time.sleep(self.config.RESET_POWER_OFF_SEC)
+                
+                # Restore all pins to inactive state (HIGH for active-low relays)
+                self.logger.info("Restoring all pins to inactive state")
+                for pin in self.config.PIN_MAP.values():
+                    GPIO.output(pin, self.config.INACTIVE_STATE)
+                
+                # Wait for device to be ready to handle requests
+                time.sleep(self.config.RESET_STABILIZATION_SEC)
+                
+                self.logger.info("Device reset completed successfully")
+                return True
+            else:
+                # Simulation mode
+                self.logger.info(f"[SIMULATE] Device reset - setting all pins LOW for {self.config.RESET_POWER_OFF_SEC} seconds")
+                time.sleep(self.config.RESET_POWER_OFF_SEC + self.config.RESET_STABILIZATION_SEC)
+                self.logger.info("[SIMULATE] Device reset completed")
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Device reset failed: {e}")
+            return False
+    
     def initialize_gpio(self) -> bool:
         """Initialize GPIO configuration."""
         if not self._gpio_available:

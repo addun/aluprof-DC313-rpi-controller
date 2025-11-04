@@ -54,6 +54,14 @@ def main():
         else:
             print("Running in simulation mode (GPIO not available).")
         
+        # Perform automatic device reset on startup to ensure synchronization
+        print("Performing automatic device reset on startup...")
+        reset_result = remote_controller.reset_device()
+        if reset_result["success"]:
+            print(f"Automatic reset successful - device synchronized to channel 01")
+        else:
+            print(f"Automatic reset failed: {reset_result.get('error', 'Unknown error')}")
+        
         # Run the Flask application
         app.run(host='0.0.0.0', port=4000, debug=False)
         

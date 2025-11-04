@@ -30,6 +30,7 @@ class PiAluprofApp:
         self.app.route('/sync', methods=['POST'])(self.sync_state)
         self.app.route('/actions', methods=['POST'])(self.process_actions)
         self.app.route('/press/<button_id>', methods=['POST'])(self.press_button)
+        self.app.route('/reset', methods=['POST'])(self.reset_device)
         self.app.route('/')(self.serve_index)
     
     def get_state(self):
@@ -175,6 +176,28 @@ class PiAluprofApp:
             except Exception as e:
                 self.logger.error(f"API Error in press_button: {e}")
                 return jsonify({"error": f"Internal server error: {e}"}), 500
+    
+    def reset_device(self):
+        """Reset the device to its default state (channel 01)."""
+        with self.state_lock:
+            try:
+                self.logger.info("Device reset requested via API")
+                
+                # Perform the reset
+                reset_result = self.remote_controller.reset_device()
+                
+                if reset_result["success"]:
+                    return jsonify(reset_result), 200
+                else:
+                    return jsonify(reset_result), 500
+                    
+            except Exception as e:
+                self.logger.error(f"API Error in reset_device: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": f"Internal server error: {e}",
+                    "current_value": self.remote_controller.get_current_value()
+                }), 500
     
     def serve_index(self):
         """Serves the controller page with git information."""

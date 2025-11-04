@@ -156,6 +156,38 @@
         margin: 0 auto;
       }
 
+      .reset-button {
+        background: linear-gradient(145deg, #cc4444, #aa3333);
+        border: 2px solid #ee5555;
+        margin-top: 10px;
+      }
+
+      .reset-button:hover {
+        background: linear-gradient(145deg, #dd5555, #bb4444);
+        border-color: #ff6666;
+      }
+
+      .reset-button:active {
+        background: linear-gradient(145deg, #aa3333, #882222);
+        border-color: #cc4444;
+      }
+
+      .status-indicator.resetting {
+        background-color: #ff0000;
+        animation: blink 0.5s infinite;
+      }
+
+      @keyframes blink {
+        0%,
+        50% {
+          opacity: 1;
+        }
+        51%,
+        100% {
+          opacity: 0.3;
+        }
+      }
+
       .panel-title {
         text-align: center;
         margin-bottom: 15px;
@@ -421,6 +453,70 @@
         }
       }
 
+      // Reset device function
+      async function resetDevice() {
+        // Confirmation dialog
+        const confirmed = confirm(
+          "Are you sure you want to reset the device?\n\n" +
+            "This will:\n" +
+            "• Power cycle the physical controller\n" +
+            "• Reset the device to channel 01\n" +
+            "• Synchronize the software state\n\n" +
+            "Click OK to continue or Cancel to abort."
+        );
+
+        if (!confirmed) {
+          return;
+        }
+
+        const statusIndicator = document.getElementById("statusIndicator");
+        const resetButton = document.getElementById("resetBtn");
+
+        try {
+          // Start blinking indicator and disable button
+          statusIndicator.classList.add("resetting");
+          resetButton.disabled = true;
+          resetButton.textContent = "RESETTING...";
+
+          console.log("Starting device reset...");
+
+          const response = await fetch(`${API_BASE}/reset`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            console.log("Device reset successful:", data);
+
+            // Update display to show new state
+            updateDisplay(data.current_value);
+
+            // Show success message
+            alert("Device reset successful!\nController synchronized to channel 01.");
+
+            // Refresh state from server
+            pollState();
+          } else {
+            console.error("Device reset failed:", data);
+            showError(`Reset failed: ${data.error || "Unknown error"}`);
+            alert(`Device reset failed:\n${data.error || "Unknown error"}`);
+          }
+        } catch (error) {
+          console.error("Network error during reset:", error);
+          showError("Network error during reset");
+          alert("Network error during device reset.\nPlease check your connection and try again.");
+        } finally {
+          // Stop blinking and restore button
+          statusIndicator.classList.remove("resetting");
+          resetButton.disabled = false;
+          resetButton.textContent = "RESET DEVICE";
+        }
+      }
+
       // Show error message
       function showError(message) {
         // Simple error display - could be enhanced with a proper notification system
@@ -580,6 +676,7 @@
         document.getElementById("rightBtn").addEventListener("click", () => pressButton("RIGHT"));
         document.getElementById("bottomBtn").addEventListener("click", () => pressButton("DOWN"));
         document.getElementById("p2Btn").addEventListener("click", () => pressButton("P2"));
+        document.getElementById("resetBtn").addEventListener("click", resetDevice);
       });
     </script>
   </head>
@@ -601,6 +698,7 @@
       <div class="control-panel">
         <div class="panel-title">Extra buttons</div>
         <button class="p2-button" id="p2Btn">P2</button>
+        <button class="p2-button reset-button" id="resetBtn">RESET DEVICE</button>
       </div>
     </div>
 

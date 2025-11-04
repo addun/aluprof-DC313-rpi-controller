@@ -13,10 +13,14 @@ class Config:
     STATE_FILE = 'storage/display_state.json'
     
     # --- Timing Configuration ---
-    PRESS_DELAY_SEC = 0.1  # Delay between presses to allow the PIC chip to register input
-    WAKE_UP_DELAY_SEC = 0.5
-    GO_TO_SLEEP_DELAY_SEC = 8  # Device needs 8 seconds to go to sleep after any action
-    SLEEP_THRESHOLD_SEC = 1.0  # Additional threshold to ensure device is definitely asleep
+    PRESS_DELAY_SEC = 0.1           # Delay between presses to allow the PIC chip to register input
+    WAKE_UP_DELAY_SEC = 0.5         # Time to wait after waking up the device
+    GO_TO_SLEEP_DELAY_SEC = 8       # Device needs 8 seconds to go to sleep after any action
+    SLEEP_THRESHOLD_SEC = 0.3       # Additional threshold to ensure device is definitely asleep
+    
+    # --- Reset Configuration ---
+    RESET_POWER_OFF_SEC = 1.0       # Duration to keep device powered off during reset
+    RESET_STABILIZATION_SEC = 3.0   # Time to wait after power on for device stabilization
     
     # Press duration configuration based on PIN_MAP
     PRESS_DURATION_MAP = {
@@ -35,6 +39,8 @@ class Config:
         'STOP': 4,       # BCM 4: Action (DOES NOT update number state)
         'INCREASE': 14,  # BCM 14: Increases the current number (updates state)
         'GO_DOWN': 15,   # BCM 15: Moves cursor/action (DOES NOT update number state)
+        'P2': 18,        # BCM 18: Programming mode
+        'POWER': 17,     # BCM 17: Device power control for reset functionality
     }
     
     # --- GPIO Relay Configuration ---

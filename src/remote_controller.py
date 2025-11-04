@@ -196,3 +196,47 @@ class RemoteController:
     def _update_action_time(self) -> None:
         """Update the last action time to current time."""
         self.last_action_time = time.time()
+    
+    def reset_device(self) -> Dict[str, Any]:
+        """
+        Reset the device to its default state (channel 01).
+        
+        This performs a power cycle reset and synchronizes the internal state.
+        
+        Returns:
+            Dict containing reset status and new state information
+        """
+        self.logger.info("Starting device reset procedure")
+        
+        try:
+            # Perform power cycle reset
+            reset_success = self.gpio_controller.reset_device()
+            
+            if not reset_success:
+                return {
+                    "success": False,
+                    "error": "Failed to power cycle device",
+                    "current_value": self.remote_state.get_current_value()
+                }
+            
+            # Reset internal state to match device default
+            self.remote_state.set_value(1)
+            self.last_action_time = time.time()
+            
+            self.logger.info("Device reset completed successfully - state synchronized to channel 01")
+            
+            return {
+                "success": True,
+                "message": "Device reset successful",
+                "current_value": 1,
+                "previous_state": "reset",
+                "new_state": "channel_01"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Device reset failed: {e}")
+            return {
+                "success": False,
+                "error": f"Reset procedure failed: {str(e)}",
+                "current_value": self.remote_state.get_current_value()
+            }
