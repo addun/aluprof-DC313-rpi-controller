@@ -68,9 +68,9 @@ class RemoteController:
         self._update_action_time()
     
     def press_p2_button(self) -> None:
-        """Press the P2 button (placeholder for future implementation)."""
+        """Press the P2 button (programming mode)."""
         self._wake_up_when_needed()
-        # Note: P2 button pin mapping needs to be added to config.PIN_MAP when available
+        self.gpio_controller.press_pin(self.config.PIN_MAP['P2'])
         self._update_action_time()
     
     # State management methods
