@@ -6,12 +6,23 @@
 set -e  # Exit on any error
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="github.com"
+DELAY=30
+
 cd "$APP_DIR"
 
 echo "$(date): Starting aluprof-dc313-rpi-controller..."
 
 # Pull latest changes from repository
 echo "$(date): Pulling latest changes from repository..."
+
+# Loop until we can successfully ping the target
+# We use 'until' which is the opposite of 'while'
+until ping -c 1 -W 2 $TARGET > /dev/null 2>&1; do
+  echo "$(date): Internet is down. Retrying in $DELAY seconds..."
+  sleep $DELAY
+done
+
 git fetch origin
 git reset --hard origin/main
 
