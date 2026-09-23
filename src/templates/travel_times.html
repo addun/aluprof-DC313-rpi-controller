@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shutter travel times</title>
+    <style>
+      *,
+      *::after,
+      *::before {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #1a1a1a;
+        color: #ffffff;
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+      }
+
+      .page-link {
+        color: #66aaff;
+        text-decoration: none;
+        font-size: 14px;
+        margin-bottom: 16px;
+      }
+
+      .page-link:hover {
+        color: #99c4ff;
+      }
+
+      .api-panel {
+        background-color: #2d2d2d;
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        border: 2px solid #444;
+        max-width: 400px;
+        width: 100%;
+      }
+
+      .api-panel + .api-panel {
+        margin-top: 20px;
+      }
+
+      .input-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .input-group input,
+      .input-group select {
+        background-color: #1a1a1a;
+        border: 2px solid #555;
+        border-radius: 5px;
+        color: #ffffff;
+        padding: 8px 12px;
+        font-size: 14px;
+        outline: none;
+      }
+
+      .input-group input:focus,
+      .input-group select:focus {
+        border-color: #00ff00;
+      }
+
+      .input-group input {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .input-group select {
+        min-width: 100px;
+      }
+
+      .api-title {
+        color: #ccc;
+        font-size: 14px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .api-hint {
+        color: #888;
+        font-size: 12px;
+        line-height: 1.4;
+        margin-bottom: 10px;
+      }
+
+      .travel-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .travel-nr {
+        width: 2.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #00ff00;
+        font-family: "Courier New", monospace;
+        font-weight: bold;
+        font-size: 16px;
+      }
+
+      .travel-row input {
+        flex: 1;
+        background-color: #1a1a1a;
+        border: 2px solid #555;
+        border-radius: 5px;
+        color: #ffffff;
+        padding: 8px 12px;
+        font-size: 14px;
+        outline: none;
+        min-width: 0;
+      }
+
+      .travel-row input:focus {
+        border-color: #00ff00;
+      }
+
+      .api-button {
+        display: block;
+        box-sizing: border-box;
+        background: linear-gradient(145deg, #00aa00, #008800);
+        border: 2px solid #00cc00;
+        border-radius: 8px;
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 10px 20px;
+        width: 100%;
+        text-align: center;
+      }
+
+      .api-button:hover {
+        background: linear-gradient(145deg, #00cc00, #00aa00);
+      }
+
+      .form-error {
+        color: #ff6666;
+      }
+
+      .form-saved {
+        color: #00ff00;
+      }
+
+      @media (max-width: 480px) {
+        .input-group {
+          flex-direction: column;
+        }
+
+        .input-group select {
+          min-width: unset;
+        }
+      }
+    </style>
+    <script>
+      async function executeAction() {
+        const nr = document.getElementById("actionNr").value;
+        const action = document.getElementById("actionType").value;
+
+        if (!nr || nr === "") {
+          alert("Please enter a number (0-15)");
+          return;
+        }
+
+        if (!action || action === "") {
+          alert("Please select an action");
+          return;
+        }
+
+        const numNr = parseInt(nr, 10);
+        if (numNr < 0 || numNr > 15) {
+          alert("Number must be between 0 and 15");
+          return;
+        }
+
+        const payload = { nr: numNr, action: action };
+        if (action === "PERCENT") {
+          const percentRaw = document.getElementById("actionPercent").value;
+          if (percentRaw === "") {
+            alert("Please enter a closing percentage (0-100)");
+            return;
+          }
+          const percent = Number(percentRaw);
+          if (Number.isNaN(percent) || percent < 0 || percent > 100) {
+            alert("Percentage must be between 0 and 100");
+            return;
+          }
+          payload.percent = percent;
+        }
+
+        const executeButton = document.getElementById("executeActionBtn");
+        executeButton.disabled = true;
+        const previousLabel = executeButton.textContent;
+        if (action === "PERCENT") {
+          executeButton.textContent = "MOVING...";
+        }
+
+        try {
+          const response = await fetch("/actions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (response.ok) {
+            if (action === "PERCENT") {
+              alert(`Shutter ${numNr} set to ${payload.percent}% closed`);
+              document.getElementById("actionPercent").value = "";
+            }
+            document.getElementById("actionNr").value = "";
+            document.getElementById("actionType").value = "";
+          } else {
+            const error = await response.json();
+            alert(`Action failed: ${error.error}`);
+          }
+        } catch (error) {
+          alert("Network error during action");
+        } finally {
+          executeButton.disabled = false;
+          executeButton.textContent = previousLabel;
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <a class="page-link" href="/">Back to controller</a>
+    <div class="api-panel">
+      <div class="api-title">Execute Action</div>
+      <div class="input-group">
+        <input type="number" id="actionNr" min="0" max="15" placeholder="Device nr (0-15)" />
+        <select id="actionType">
+          <option value="">Action</option>
+          <option value="UP">UP</option>
+          <option value="DOWN">DOWN</option>
+          <option value="STOP">STOP</option>
+          <option value="PERCENT">PERCENT</option>
+        </select>
+        <input type="number" id="actionPercent" min="0" max="100" step="1" placeholder="Closing % (0-100)" />
+      </div>
+      <button class="api-button" id="executeActionBtn" type="button" onclick="executeAction()">EXECUTE</button>
+    </div>
+    <form class="api-panel" method="post" action="/travel-times">
+      <div class="api-title">Shutter travel times</div>
+      {% for row in rows %}
+      <div class="travel-row">
+        <label class="travel-nr" for="seconds-{{ row.nr }}">{{ row.nr }}</label>
+        <input
+          id="seconds-{{ row.nr }}"
+          name="{{ row.nr }}"
+          type="number"
+          min="0"
+          step="0.1"
+          value="{{ row.seconds }}"
+          aria-label="Shutter {{ row.nr }} travel seconds"
+          required
+        />
+      </div>
+      {% endfor %}
+      <button class="api-button" type="submit">SAVE TIMES</button>
+      {% if error %}
+      <div class="api-hint form-error">{{ error }}</div>
+      {% elif saved %}
+      <div class="api-hint form-saved">Saved. The next percentage move uses these times.</div>
+      {% endif %}
+    </form>
+  </body>
+</html>

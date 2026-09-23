@@ -21,6 +21,7 @@ from src.config import Config
 from src.remote_state import RemoteState
 from src.gpio_controller import GPIOController
 from src.remote_controller import RemoteController
+from src.shutter_percent_controller import ShutterPercentController
 
 
 def main():
@@ -43,8 +44,9 @@ def main():
         max_value=config.MAX_VALUE
     )
     remote_controller = RemoteController(gpio_controller, config, remote_state)
+    shutter_percent_controller = ShutterPercentController(remote_controller)
     
-    app = PiAluprofApp(config, remote_controller)
+    app = PiAluprofApp(config, remote_controller, shutter_percent_controller)
     
     try:
         if gpio_controller.initialize_gpio():
