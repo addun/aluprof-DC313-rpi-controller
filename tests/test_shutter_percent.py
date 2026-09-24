@@ -16,7 +16,7 @@ from src.app import PiAluprofApp
 from src.config import Config
 from src.remote_controller import RemoteController
 from src.remote_state import RemoteState
-from src.shutter_percent_controller import ShutterPercentController
+from src.shutter_percent_controller import ActionCancelled, ShutterPercentController
 from src.shutter_travel_times import ShutterTravelTimeError, ShutterTravelTimes
 
 
@@ -193,6 +193,54 @@ class TestSetClosingPercent(unittest.TestCase):
             ("press", PIN_STOP),
         ])
 
+    def test_cancel_during_the_first_press_skips_the_rest_of_the_move(self):
+        cancel = threading.Event()
+        events = []
+        self.mock_state.current_value = 1
+
+        def press(pin):
+            events.append(pin)
+            cancel.set()
+
+        self.mock_gpio.press_pin.side_effect = press
+        with self.assertRaises(ActionCancelled):
+            self.controller.set_opening_percent(1, 20, cancel)
+
+        self.assertEqual(events, [PIN_DOWN])
+
+    def test_cancel_after_the_return_move_does_not_press_stop(self):
+        cancel = threading.Event()
+        events = []
+        self.mock_state.current_value = 1
+        self.store.replace({1: 0.05})
+
+        def press(pin):
+            events.append(pin)
+            if pin == PIN_UP:
+                cancel.set()
+
+        self.mock_gpio.press_pin.side_effect = press
+        with self.assertRaises(ActionCancelled):
+            self.controller.set_opening_percent(1, 20, cancel)
+
+        self.assertEqual(events, [PIN_DOWN, PIN_UP])
+
+    def test_failure_still_presses_stop_when_the_move_was_not_cancelled(self):
+        events = []
+        self.mock_state.current_value = 1
+
+        def press(pin):
+            events.append(pin)
+            if pin == PIN_UP:
+                raise RuntimeError("gpio failed")
+
+        self.mock_gpio.press_pin.side_effect = press
+        with patch("time.sleep", side_effect=lambda seconds: events.append(("sleep", seconds))):
+            with self.assertRaises(RuntimeError):
+                self.controller.set_opening_percent(1, 100)
+
+        self.assertEqual(events, [PIN_UP, PIN_STOP])
+
 
 class TestPercentActionRoute(unittest.TestCase):
     def setUp(self):
@@ -224,7 +272,7 @@ class TestPercentActionRoute(unittest.TestCase):
         self._join_device_actions()
 
         self.assertEqual(response.status_code, 202)
-        self.shutter_percent.set_opening_percent.assert_called_once_with(1, 50)
+        self._assert_percent_call(1, 50)
         body = response.get_json()
         self.assertEqual(body["status"], "accepted")
         self.assertEqual(body["percent"], 50)
@@ -233,7 +281,7 @@ class TestPercentActionRoute(unittest.TestCase):
         started = threading.Event()
         release = threading.Event()
 
-        def block(shutter_nr, percent):
+        def block(shutter_nr, percent, cancel_event):
             started.set()
             self.assertTrue(release.wait(2))
 
@@ -246,38 +294,105 @@ class TestPercentActionRoute(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 202)
             self.assertTrue(started.wait(2))
-            self.shutter_percent.set_opening_percent.assert_called_once_with(1, 25)
+            self._assert_percent_call(1, 25)
         finally:
             release.set()
 
-    def test_second_percent_starts_while_the_first_is_still_moving(self):
-        order = []
-        order_lock = threading.Lock()
-        both_started = threading.Event()
-        release = threading.Event()
+    def test_same_channel_request_cancels_the_previous_move(self):
+        first_entered = threading.Event()
+        first_cancelled = threading.Event()
+        second_entered = threading.Event()
+        release_second = threading.Event()
 
-        def run(shutter_nr, percent):
-            with order_lock:
-                order.append(percent)
-                if len(order) == 2:
-                    both_started.set()
-            self.assertTrue(release.wait(2))
+        def run(shutter_nr, percent, cancel_event):
+            if percent == 20:
+                first_entered.set()
+                if cancel_event.wait(2):
+                    first_cancelled.set()
+                    raise ActionCancelled()
+                return
+            second_entered.set()
+            self.assertTrue(release_second.wait(2))
 
         self.shutter_percent.set_opening_percent.side_effect = run
 
         try:
             first = self.client.post(
                 "/actions",
-                json={"nr": 1, "action": "PERCENT", "percent": 10},
+                json={"nr": 1, "action": "PERCENT", "percent": 20},
+            )
+            self.assertEqual(first.status_code, 202)
+            self.assertTrue(first_entered.wait(2))
+            second = self.client.post(
+                "/actions",
+                json={"nr": 1, "action": "PERCENT", "percent": 50},
+            )
+            self.assertEqual(second.status_code, 202)
+            self.assertTrue(first_cancelled.wait(2))
+            self.assertTrue(second_entered.wait(2))
+        finally:
+            release_second.set()
+
+    def test_button_on_the_same_channel_cancels_the_percent_move(self):
+        entered = threading.Event()
+        cancelled = threading.Event()
+
+        def run(shutter_nr, percent, cancel_event):
+            entered.set()
+            if cancel_event.wait(2):
+                cancelled.set()
+                raise ActionCancelled()
+
+        self.shutter_percent.set_opening_percent.side_effect = run
+
+        started = self.client.post(
+            "/actions",
+            json={"nr": 1, "action": "PERCENT", "percent": 20},
+        )
+        self.assertEqual(started.status_code, 202)
+        self.assertTrue(entered.wait(2))
+
+        replacement = self.client.post(
+            "/actions",
+            json={"nr": 1, "action": "UP"},
+        )
+        self._join_device_actions()
+
+        self.assertEqual(replacement.status_code, 202)
+        self.assertTrue(cancelled.is_set())
+        self.remote.move_to_target.assert_called_once_with(1)
+        self.remote.press_up_button.assert_called_once_with()
+
+    def test_a_different_channel_does_not_cancel_the_move_in_progress(self):
+        both_started = threading.Event()
+        release = threading.Event()
+        cancels = {}
+        order_lock = threading.Lock()
+
+        def run(shutter_nr, percent, cancel_event):
+            with order_lock:
+                cancels[shutter_nr] = cancel_event
+                if len(cancels) == 2:
+                    both_started.set()
+            self.assertTrue(release.wait(2))
+            self.assertFalse(cancel_event.is_set())
+
+        self.shutter_percent.set_opening_percent.side_effect = run
+
+        try:
+            first = self.client.post(
+                "/actions",
+                json={"nr": 1, "action": "PERCENT", "percent": 20},
             )
             second = self.client.post(
                 "/actions",
-                json={"nr": 1, "action": "PERCENT", "percent": 20},
+                json={"nr": 2, "action": "PERCENT", "percent": 50},
             )
             self.assertEqual(first.status_code, 202)
             self.assertEqual(second.status_code, 202)
             self.assertTrue(both_started.wait(2))
-            self.assertEqual(sorted(order), [10, 20])
+            self.assertFalse(cancels[1].is_set())
+            self.assertFalse(cancels[2].is_set())
         finally:
             release.set()
 
@@ -292,7 +407,7 @@ class TestPercentActionRoute(unittest.TestCase):
         self._join_device_actions()
 
         self.assertEqual(response.status_code, 202)
-        self.shutter_percent.set_opening_percent.assert_called_once_with(1, 20)
+        self._assert_percent_call(1, 20)
         self.remote.press_up_button.assert_not_called()
 
     def test_up_action_is_accepted(self):
@@ -328,6 +443,13 @@ class TestPercentActionRoute(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("integer", response.get_json()["error"])
         self.shutter_percent.set_opening_percent.assert_not_called()
+
+    def _assert_percent_call(self, shutter_nr, percent):
+        self.shutter_percent.set_opening_percent.assert_called_once()
+        called_nr, called_percent, cancel_event = self.shutter_percent.set_opening_percent.call_args.args
+        self.assertEqual((called_nr, called_percent), (shutter_nr, percent))
+        self.assertIsInstance(cancel_event, threading.Event)
+        self.assertFalse(cancel_event.is_set())
 
     def test_index_links_to_the_travel_times_page(self):
         response = self.client.get("/")

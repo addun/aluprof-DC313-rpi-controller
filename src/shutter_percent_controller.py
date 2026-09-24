@@ -1,10 +1,15 @@
 """Move a shutter to an opening percentage by timing from an end stop."""
 
 import logging
+import threading
 import time
 
 from .remote_controller import RemoteController
 from .shutter_travel_times import ShutterTravelTimes
+
+
+class ActionCancelled(Exception):
+    """A newer command for the same shutter replaced this move."""
 
 
 class ShutterPercentController:
@@ -22,7 +27,9 @@ class ShutterPercentController:
     without restarting.
 
     The travel wait does not hold the remote, so another channel can be
-    commanded while this motor is running.
+    commanded while this motor is running. A cancel event aborts the rest of
+    this move before the next button press. The button already in progress
+    is left to finish, and this move does not press STOP on the way out.
     """
 
     def __init__(
@@ -34,10 +41,16 @@ class ShutterPercentController:
         self.travel_times = travel_times
         self.logger = logging.getLogger('ShutterPercentController')
 
-    def set_opening_percent(self, shutter_nr: int, percent: int) -> None:
+    def set_opening_percent(
+        self,
+        shutter_nr: int,
+        percent: int,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
         """Move a shutter to an opening percentage.
 
         The remote is taken only for each channel selection and button press.
+        When cancel_event is set, the move stops before the next press.
         """
         travel_time = self._travel_time_for(shutter_nr)
         opening_percent = self._opening_percent(percent)
@@ -63,28 +76,35 @@ class ShutterPercentController:
 
         def press(action: str) -> None:
             with remote.get_lock():
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ActionCancelled()
                 remote.move_to_target(shutter_nr)
                 buttons[action]()
 
         try:
             if approach == "open_then_close":
                 press("UP")
-                self._wait_for_travel(travel_time)
+                self._wait_for_travel(travel_time, cancel_event)
                 if timed_wait > 0:
                     press("DOWN")
-                    self._wait_for_travel(timed_wait)
+                    self._wait_for_travel(timed_wait, cancel_event)
                     press("STOP")
             else:
                 press("DOWN")
-                self._wait_for_travel(travel_time)
+                self._wait_for_travel(travel_time, cancel_event)
                 if timed_wait > 0:
                     press("UP")
-                    self._wait_for_travel(timed_wait)
+                    self._wait_for_travel(timed_wait, cancel_event)
                     press("STOP")
+        except ActionCancelled:
+            self.logger.info(f"Shutter {shutter_nr} opening-percent move cancelled")
+            raise
         except Exception:
             self.logger.exception("Opening-percent move failed; pressing STOP")
             try:
                 press("STOP")
+            except ActionCancelled:
+                raise
             except Exception:
                 self.logger.exception("Failed to stop shutter after error")
             raise
@@ -109,7 +129,19 @@ class ShutterPercentController:
             raise ValueError("'percent' must be between 0 and 100.")
         return percent
 
-    def _wait_for_travel(self, seconds: float) -> None:
-        """Wait while the shutter motor runs."""
+    def _wait_for_travel(
+        self,
+        seconds: float,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
+        """Wait while the shutter motor runs.
+
+        A set cancel event ends the wait immediately so the caller can stop
+        before the next button press.
+        """
         self.logger.info(f"Waiting {seconds:.2f}s for shutter travel")
-        time.sleep(seconds)
+        if cancel_event is None:
+            time.sleep(seconds)
+            return
+        if cancel_event.wait(seconds):
+            raise ActionCancelled()

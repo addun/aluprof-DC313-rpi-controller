@@ -1,9 +1,8 @@
-import time
 import threading
 import logging
 from flask import Flask, request, jsonify, Response, render_template, redirect
 from .remote_controller import RemoteController
-from .shutter_percent_controller import ShutterPercentController
+from .shutter_percent_controller import ActionCancelled, ShutterPercentController
 from .config import Config
 from .git_utils import get_git_info
 from .shutter_travel_times import ShutterTravelTimeError
@@ -22,6 +21,8 @@ class PiAluprofApp:
         self.config = config
         self.remote_controller = remote_controller
         self.shutter_percent_controller = shutter_percent_controller
+        self._channel_moves_lock = threading.Lock()
+        self._channel_moves: dict[int, threading.Event] = {}
         self.app = Flask(__name__, template_folder='templates')
         
         # Get git info once at startup
@@ -78,8 +79,10 @@ class PiAluprofApp:
         If a JSON array is sent, only the first item is used.
 
         Every action is accepted and run in the background, so the response
-        returns before the motor finishes. The remote lock covers one channel
-        selection and button press, then is free during a travel wait.
+        returns before the motor finishes. A new action for a shutter cancels
+        the action already running for that same shutter. Another shutter is
+        left running. The remote lock covers one channel selection and button
+        press, then is free during a travel wait.
         """
         try:
             action_dict = self._single_action(request.get_json(silent=True))
@@ -107,11 +110,12 @@ class PiAluprofApp:
                 shutter_nr = target_value
 
                 def move(
+                    cancel_event: threading.Event,
                     shutter_nr: int = shutter_nr,
                     opening_percent: int = opening_percent,
                 ) -> None:
                     self.shutter_percent_controller.set_opening_percent(
-                        shutter_nr, opening_percent
+                        shutter_nr, opening_percent, cancel_event
                     )
 
                 response = {
@@ -131,18 +135,23 @@ class PiAluprofApp:
 
                 shutter_nr = target_value
 
-                def move(shutter_nr: int = shutter_nr, press=press) -> None:
+                def move(
+                    cancel_event: threading.Event,
+                    shutter_nr: int = shutter_nr,
+                    press=press,
+                ) -> None:
                     with self.remote_controller.get_lock():
+                        if cancel_event.is_set():
+                            raise ActionCancelled()
                         self.remote_controller.move_to_target(shutter_nr)
                         press()
-                    time.sleep(0.5)
 
                 response = {
                     "status": "accepted",
                     "nr": shutter_nr,
                 }
 
-            self._start_device_action(move)
+            self._start_device_action(shutter_nr, move)
             return jsonify(response), 202
 
         except (ValueError, ShutterTravelTimeError) as e:
@@ -152,13 +161,40 @@ class PiAluprofApp:
             self.logger.error(f"API Error in process_actions: {e}")
             return jsonify({"error": str(e)}), 500
 
-    def _start_device_action(self, action) -> None:
-        """Run one device action without holding the HTTP response open."""
+    def _begin_channel_move(self, shutter_nr: int) -> threading.Event:
+        """Cancel the in-flight move for this shutter and return a fresh event."""
+        cancel_event = threading.Event()
+        with self._channel_moves_lock:
+            previous = self._channel_moves.get(shutter_nr)
+            if previous is not None:
+                self.logger.info(f"Cancelling in-flight action for shutter {shutter_nr}")
+                previous.set()
+            self._channel_moves[shutter_nr] = cancel_event
+        return cancel_event
+
+    def _finish_channel_move(self, shutter_nr: int, cancel_event: threading.Event) -> None:
+        """Drop this move's cancel event once a newer move has not replaced it."""
+        with self._channel_moves_lock:
+            if self._channel_moves.get(shutter_nr) is cancel_event:
+                del self._channel_moves[shutter_nr]
+
+    def _start_device_action(self, shutter_nr: int, action) -> None:
+        """Run one device action without holding the HTTP response open.
+
+        A later action for the same shutter sets this move's cancel event
+        before that later action presses a button.
+        """
+        cancel_event = self._begin_channel_move(shutter_nr)
+
         def worker():
             try:
-                action()
+                action(cancel_event)
+            except ActionCancelled:
+                self.logger.info(f"Action for shutter {shutter_nr} cancelled")
             except Exception:
                 self.logger.exception("Device action failed")
+            finally:
+                self._finish_channel_move(shutter_nr, cancel_event)
 
         threading.Thread(target=worker, name="device-action", daemon=True).start()
 
