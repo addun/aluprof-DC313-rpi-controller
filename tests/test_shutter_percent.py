@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Tests for timed shutter closing percentage."""
+"""Tests for timed shutter opening percentage."""
 
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from contextlib import nullcontext
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -13,12 +15,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.app import PiAluprofApp
 from src.config import Config
 from src.remote_controller import RemoteController
+from src.remote_state import RemoteState
 from src.shutter_percent_controller import ShutterPercentController
 from src.shutter_travel_times import ShutterTravelTimeError, ShutterTravelTimes
 
 
+PIN_DECREASE = 2
 PIN_UP = 3
 PIN_STOP = 4
+PIN_INCREASE = 14
 PIN_DOWN = 15
 
 
@@ -46,13 +51,12 @@ class TestSetClosingPercent(unittest.TestCase):
         self.mock_state.current_value = shutter_nr
         self.mock_gpio.press_pin.side_effect = lambda pin: events.append(("press", pin))
         with patch("time.sleep", side_effect=lambda seconds: events.append(("sleep", seconds))):
-            result = self.controller.set_closing_percent(shutter_nr, percent)
-        return result, events
+            self.controller.set_opening_percent(shutter_nr, percent)
+        return events
 
     def test_fifty_percent_opens_fully_then_closes_halfway(self):
-        result, events = self._run(1, 50)
+        events = self._run(1, 50)
 
-        self.assertEqual(result["approach"], "open_then_close")
         self.assertEqual(events, [
             ("press", PIN_UP),
             ("sleep", 20.0),
@@ -61,44 +65,41 @@ class TestSetClosingPercent(unittest.TestCase):
             ("press", PIN_STOP),
         ])
 
-    def test_below_fifty_closes_for_that_fraction(self):
-        result, events = self._run(1, 25)
+    def test_below_fifty_closes_fully_then_opens_for_that_fraction(self):
+        events = self._run(1, 25)
 
-        self.assertEqual(result["approach"], "open_then_close")
         self.assertEqual(events, [
-            ("press", PIN_UP),
-            ("sleep", 20.0),
             ("press", PIN_DOWN),
+            ("sleep", 20.0),
+            ("press", PIN_UP),
             ("sleep", 5.0),
             ("press", PIN_STOP),
         ])
 
-    def test_above_fifty_closes_fully_then_opens_back(self):
-        result, events = self._run(2, 75)
+    def test_above_fifty_opens_fully_then_closes_back(self):
+        events = self._run(2, 75)
 
-        self.assertEqual(result["approach"], "close_then_open")
-        self.assertEqual(result["timed_move_sec"], 10.0)
         self.assertEqual(events, [
-            ("press", PIN_DOWN),
-            ("sleep", 40.0),
             ("press", PIN_UP),
+            ("sleep", 40.0),
+            ("press", PIN_DOWN),
             ("sleep", 10.0),
             ("press", PIN_STOP),
         ])
 
-    def test_zero_percent_only_opens_fully(self):
-        _, events = self._run(1, 0)
-
-        self.assertEqual(events, [
-            ("press", PIN_UP),
-            ("sleep", 20.0),
-        ])
-
-    def test_one_hundred_percent_only_closes_fully(self):
-        _, events = self._run(1, 100)
+    def test_zero_percent_only_closes_fully(self):
+        events = self._run(1, 0)
 
         self.assertEqual(events, [
             ("press", PIN_DOWN),
+            ("sleep", 20.0),
+        ])
+
+    def test_one_hundred_percent_only_opens_fully(self):
+        events = self._run(1, 100)
+
+        self.assertEqual(events, [
+            ("press", PIN_UP),
             ("sleep", 20.0),
         ])
 
@@ -115,6 +116,12 @@ class TestSetClosingPercent(unittest.TestCase):
 
         self.mock_gpio.press_pin.assert_not_called()
 
+    def test_fractional_percent_does_not_move(self):
+        with self.assertRaises(ValueError):
+            self._run(1, 50.5)
+
+        self.mock_gpio.press_pin.assert_not_called()
+
     def test_missing_percent_does_not_move(self):
         with self.assertRaises(ValueError):
             self._run(1, None)
@@ -122,54 +129,159 @@ class TestSetClosingPercent(unittest.TestCase):
         self.mock_gpio.press_pin.assert_not_called()
 
     def test_changed_travel_time_applies_without_a_new_controller(self):
-        _, events = self._run(1, 0)
+        events = self._run(1, 100)
         self.assertEqual(events, [("press", PIN_UP), ("sleep", 20.0)])
 
         self.store.replace({1: 8.0, 2: 40.0})
-        _, events = self._run(1, 0)
+        events = self._run(1, 100)
         self.assertEqual(events, [("press", PIN_UP), ("sleep", 8.0)])
+
+    def test_travel_wait_lets_another_channel_use_the_remote(self):
+        state = RemoteState(self.config.MAX_VALUE)
+        state.set_value(1)
+        remote = RemoteController(self.mock_gpio, self.config, state)
+        remote.last_action_time = time.time()
+        self.store.replace({1: 8.0, 2: 10.0})
+        controller = ShutterPercentController(remote, self.store)
+
+        events = []
+        first_wait_entered = threading.Event()
+        release_first_wait = threading.Event()
+
+        def press(pin):
+            events.append(("press", pin))
+
+        def fake_sleep(seconds):
+            events.append(("sleep", seconds))
+            if seconds == 8.0:
+                first_wait_entered.set()
+                self.assertTrue(release_first_wait.wait(2))
+
+        self.mock_gpio.press_pin.side_effect = press
+        worker = threading.Thread(
+            target=lambda: controller.set_opening_percent(1, 50),
+            name="shutter-1",
+        )
+        try:
+            with patch("time.sleep", side_effect=fake_sleep):
+                worker.start()
+                self.assertTrue(first_wait_entered.wait(2))
+                controller.set_opening_percent(2, 0)
+                self.assertEqual(events, [
+                    ("press", PIN_UP),
+                    ("sleep", 8.0),
+                    ("press", PIN_INCREASE),
+                    ("press", PIN_DOWN),
+                    ("sleep", 10.0),
+                ])
+                release_first_wait.set()
+                worker.join(2)
+        finally:
+            release_first_wait.set()
+            worker.join(2)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(events, [
+            ("press", PIN_UP),
+            ("sleep", 8.0),
+            ("press", PIN_INCREASE),
+            ("press", PIN_DOWN),
+            ("sleep", 10.0),
+            ("press", PIN_DECREASE),
+            ("press", PIN_DOWN),
+            ("sleep", 4.0),
+            ("press", PIN_STOP),
+        ])
 
 
 class TestPercentActionRoute(unittest.TestCase):
     def setUp(self):
         self.config = Config()
         self.remote = Mock()
+        self.remote.get_lock.return_value = nullcontext()
         self.remote.get_state_info.return_value = {"current_value": 1, "max_value": 15}
         self.remote.get_current_value.return_value = 1
         self.remote._is_device_asleep.return_value = False
         self.shutter_percent = Mock()
+        self.shutter_percent.travel_times.get_seconds.return_value = 20.0
         self.app = PiAluprofApp(self.config, self.remote, self.shutter_percent)
         self.client = self.app.app.test_client()
 
-    def test_percent_action_is_delegated(self):
-        self.shutter_percent.set_closing_percent.return_value = {
-            "percent": 50.0,
-            "approach": "open_then_close",
-            "travel_time_sec": 20.0,
-            "timed_move_sec": 10.0,
-            "final_value": 1,
-        }
+    def tearDown(self):
+        self._join_device_actions()
 
+    def _join_device_actions(self):
+        for thread in threading.enumerate():
+            if thread.name == "device-action":
+                thread.join(timeout=2)
+                self.assertFalse(thread.is_alive())
+
+    def test_percent_action_is_delegated(self):
         response = self.client.post(
             "/actions",
             json={"nr": 1, "action": "PERCENT", "percent": 50},
         )
+        self._join_device_actions()
 
-        self.assertEqual(response.status_code, 200)
-        self.shutter_percent.set_closing_percent.assert_called_once_with(1, 50)
+        self.assertEqual(response.status_code, 202)
+        self.shutter_percent.set_opening_percent.assert_called_once_with(1, 50)
         body = response.get_json()
-        self.assertEqual(body["approach"], "open_then_close")
-        self.assertEqual(body["percent"], 50.0)
+        self.assertEqual(body["status"], "accepted")
+        self.assertEqual(body["percent"], 50)
+
+    def test_percent_action_returns_before_the_move_finishes(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def block(shutter_nr, percent):
+            started.set()
+            self.assertTrue(release.wait(2))
+
+        self.shutter_percent.set_opening_percent.side_effect = block
+
+        try:
+            response = self.client.post(
+                "/actions",
+                json={"nr": 1, "action": "PERCENT", "percent": 25},
+            )
+            self.assertEqual(response.status_code, 202)
+            self.assertTrue(started.wait(2))
+            self.shutter_percent.set_opening_percent.assert_called_once_with(1, 25)
+        finally:
+            release.set()
+
+    def test_second_percent_starts_while_the_first_is_still_moving(self):
+        order = []
+        order_lock = threading.Lock()
+        both_started = threading.Event()
+        release = threading.Event()
+
+        def run(shutter_nr, percent):
+            with order_lock:
+                order.append(percent)
+                if len(order) == 2:
+                    both_started.set()
+            self.assertTrue(release.wait(2))
+
+        self.shutter_percent.set_opening_percent.side_effect = run
+
+        try:
+            first = self.client.post(
+                "/actions",
+                json={"nr": 1, "action": "PERCENT", "percent": 10},
+            )
+            second = self.client.post(
+                "/actions",
+                json={"nr": 1, "action": "PERCENT", "percent": 20},
+            )
+            self.assertEqual(first.status_code, 202)
+            self.assertEqual(second.status_code, 202)
+            self.assertTrue(both_started.wait(2))
+            self.assertEqual(sorted(order), [10, 20])
+        finally:
+            release.set()
 
     def test_array_body_uses_only_the_first_action(self):
-        self.shutter_percent.set_closing_percent.return_value = {
-            "percent": 20.0,
-            "approach": "open_then_close",
-            "travel_time_sec": 20.0,
-            "timed_move_sec": 4.0,
-            "final_value": 1,
-        }
-
         response = self.client.post(
             "/actions",
             json=[
@@ -177,15 +289,26 @@ class TestPercentActionRoute(unittest.TestCase):
                 {"nr": 2, "action": "UP"},
             ],
         )
+        self._join_device_actions()
 
-        self.assertEqual(response.status_code, 200)
-        self.shutter_percent.set_closing_percent.assert_called_once_with(1, 20)
+        self.assertEqual(response.status_code, 202)
+        self.shutter_percent.set_opening_percent.assert_called_once_with(1, 20)
         self.remote.press_up_button.assert_not_called()
 
-    def test_percent_configuration_error_is_returned(self):
-        self.shutter_percent.set_closing_percent.side_effect = ValueError(
-            "No travel time configured for shutter 1."
+    def test_up_action_is_accepted(self):
+        response = self.client.post(
+            "/actions",
+            json={"nr": 2, "action": "UP"},
         )
+        self._join_device_actions()
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.get_json()["status"], "accepted")
+        self.remote.move_to_target.assert_called_once_with(2)
+        self.remote.press_up_button.assert_called_once_with()
+
+    def test_percent_configuration_error_is_returned(self):
+        self.shutter_percent.travel_times.get_seconds.return_value = 0
 
         response = self.client.post(
             "/actions",
@@ -193,7 +316,18 @@ class TestPercentActionRoute(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("travel time", response.get_json()["error"])
+        self.assertIn("Travel time", response.get_json()["error"])
+        self.shutter_percent.set_opening_percent.assert_not_called()
+
+    def test_fractional_percent_is_rejected_before_the_move(self):
+        response = self.client.post(
+            "/actions",
+            json={"nr": 1, "action": "PERCENT", "percent": 50.5},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("integer", response.get_json()["error"])
+        self.shutter_percent.set_opening_percent.assert_not_called()
 
     def test_index_links_to_the_travel_times_page(self):
         response = self.client.get("/")

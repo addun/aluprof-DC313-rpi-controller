@@ -23,7 +23,6 @@ class PiAluprofApp:
         self.remote_controller = remote_controller
         self.shutter_percent_controller = shutter_percent_controller
         self.app = Flask(__name__, template_folder='templates')
-        self.device_action_lock = threading.Lock()
         
         # Get git info once at startup
         self.git_info = get_git_info()
@@ -77,54 +76,91 @@ class PiAluprofApp:
         {"nr": 1, "action": "PERCENT", "percent": 20}
 
         If a JSON array is sent, only the first item is used.
+
+        Every action is accepted and run in the background, so the response
+        returns before the motor finishes. The remote lock covers one channel
+        selection and button press, then is free during a travel wait.
         """
-        with self.device_action_lock:
-            try:
-                action_dict = self._single_action(request.get_json(silent=True))
-                self.logger.debug(f"Processing action: {action_dict}")
+        try:
+            action_dict = self._single_action(request.get_json(silent=True))
+            self.logger.debug(f"Processing action: {action_dict}")
 
-                if 'nr' not in action_dict or 'action' not in action_dict:
-                    raise ValueError("The action must include both 'nr' and 'action'.")
+            if 'nr' not in action_dict or 'action' not in action_dict:
+                raise ValueError("The action must include both 'nr' and 'action'.")
 
-                target_value = action_dict['nr']
-                action_name = str(action_dict['action']).upper()
-                self.logger.info(f"Action: Go to {target_value}, then {action_name}")
+            target_value = action_dict['nr']
+            action_name = str(action_dict['action']).upper()
+            self.logger.info(f"Action: Go to {target_value}, then {action_name}")
 
-                if isinstance(target_value, bool) or not isinstance(target_value, int) or not (0 <= target_value <= self.config.MAX_VALUE):
-                    raise ValueError(f"'nr' must be an integer (0-{self.config.MAX_VALUE}).")
+            if isinstance(target_value, bool) or not isinstance(target_value, int) or not (0 <= target_value <= self.config.MAX_VALUE):
+                raise ValueError(f"'nr' must be an integer (0-{self.config.MAX_VALUE}).")
 
-                if action_name == 'PERCENT':
-                    self.shutter_percent_controller.set_closing_percent(
-                        target_value, action_dict.get('percent')
+            if action_name == 'PERCENT':
+                opening_percent = action_dict.get('percent')
+                if isinstance(opening_percent, bool) or not isinstance(opening_percent, int) or not 0 <= opening_percent <= 100:
+                    raise ValueError("'percent' must be an integer between 0 and 100.")
+                if self.shutter_percent_controller.travel_times.get_seconds(target_value) <= 0:
+                    raise ValueError(
+                        f"Travel time for shutter {target_value} is 0. "
+                        "Set it on the controller page before moving the shutter."
+                    )
+                shutter_nr = target_value
+
+                def move(
+                    shutter_nr: int = shutter_nr,
+                    opening_percent: int = opening_percent,
+                ) -> None:
+                    self.shutter_percent_controller.set_opening_percent(
+                        shutter_nr, opening_percent
                     )
 
-                    return jsonify({
-                        "status": "completed",
-                    }), 200
-
-                goto_result = self.remote_controller.move_to_target(target_value)
-
-                if action_name == 'UP':
-                    self.remote_controller.press_up_button()
-                elif action_name == 'DOWN':
-                    self.remote_controller.press_down_button()
-                elif action_name == 'STOP':
-                    self.remote_controller.press_stop_button()
-                else:
+                response = {
+                    "status": "accepted",
+                    "nr": shutter_nr,
+                    "percent": opening_percent,
+                }
+            else:
+                buttons = {
+                    "UP": self.remote_controller.press_up_button,
+                    "DOWN": self.remote_controller.press_down_button,
+                    "STOP": self.remote_controller.press_stop_button,
+                }
+                press = buttons.get(action_name)
+                if press is None:
                     raise ValueError(f"Invalid action: {action_name}. Valid actions: UP, DOWN, STOP, PERCENT")
 
-                time.sleep(0.5)
+                shutter_nr = target_value
 
-                return jsonify({
-                    "status": "completed",
-                }), 200
+                def move(shutter_nr: int = shutter_nr, press=press) -> None:
+                    with self.remote_controller.get_lock():
+                        self.remote_controller.move_to_target(shutter_nr)
+                        press()
+                    time.sleep(0.5)
 
-            except (ValueError, ShutterTravelTimeError) as e:
-                self.logger.error(f"API Error in process_actions: {e}")
-                return jsonify({"error": str(e)}), 400
-            except Exception as e:
-                self.logger.error(f"API Error in process_actions: {e}")
-                return jsonify({"error": str(e)}), 500
+                response = {
+                    "status": "accepted",
+                    "nr": shutter_nr,
+                }
+
+            self._start_device_action(move)
+            return jsonify(response), 202
+
+        except (ValueError, ShutterTravelTimeError) as e:
+            self.logger.error(f"API Error in process_actions: {e}")
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            self.logger.error(f"API Error in process_actions: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    def _start_device_action(self, action) -> None:
+        """Run one device action without holding the HTTP response open."""
+        def worker():
+            try:
+                action()
+            except Exception:
+                self.logger.exception("Device action failed")
+
+        threading.Thread(target=worker, name="device-action", daemon=True).start()
 
     def _single_action(self, body):
         """Return one action object. An array falls back to its first item."""
@@ -140,66 +176,51 @@ class PiAluprofApp:
     
     def press_button(self, button_id):
         """Press a specific button by ID."""
-        with self.device_action_lock:
-            try:
-                button_id = button_id.upper()
-                self.logger.info(f"Button press request: {button_id}")
-                
-                # Map button IDs to remote controller methods
-                button_actions = {
-                    'UP': self.remote_controller.press_up_button,
-                    'DOWN': self.remote_controller.press_down_button,
-                    'LEFT': self.remote_controller.press_left_button,
-                    'RIGHT': self.remote_controller.press_right_button,
-                    'STOP': self.remote_controller.press_stop_button,
-                    'P2': self.remote_controller.press_p2_button
-                }
-                
-                if button_id not in button_actions:
-                    return jsonify({
-                        "error": f"Invalid button ID: {button_id}. Valid buttons: {list(button_actions.keys())}"
-                    }), 400
-                
-                # Execute the button press
-                result = button_actions[button_id]()
-                
-                # Handle buttons that return new values (LEFT/RIGHT)
-                response_data = {
-                    "status": "button_pressed",
-                    "button": button_id,
-                    "current_state": self.remote_controller.get_current_value()
-                }
-                
-                if result is not None:  # LEFT/RIGHT buttons return new value
-                    response_data["new_value"] = result
-                
-                return jsonify(response_data), 200
-                
-            except Exception as e:
-                self.logger.error(f"API Error in press_button: {e}")
-                return jsonify({"error": f"Internal server error: {e}"}), 500
+        try:
+            button_id = button_id.upper()
+            self.logger.info(f"Button press request: {button_id}")
+
+            button_actions = {
+                'UP': self.remote_controller.press_up_button,
+                'DOWN': self.remote_controller.press_down_button,
+                'LEFT': self.remote_controller.press_left_button,
+                'RIGHT': self.remote_controller.press_right_button,
+                'STOP': self.remote_controller.press_stop_button,
+                'P2': self.remote_controller.press_p2_button
+            }
+
+            if button_id not in button_actions:
+                return jsonify({
+                    "error": f"Invalid button ID: {button_id}. Valid buttons: {list(button_actions.keys())}"
+                }), 400
+
+            result = button_actions[button_id]()
+
+            response_data = {
+                "status": "button_pressed",
+                "button": button_id,
+                "current_state": self.remote_controller.get_current_value()
+            }
+
+            if result is not None:  # LEFT/RIGHT buttons return new value
+                response_data["new_value"] = result
+
+            return jsonify(response_data), 200
+
+        except Exception as e:
+            self.logger.error(f"API Error in press_button: {e}")
+            return jsonify({"error": f"Internal server error: {e}"}), 500
     
     def reset_device(self):
         """Reset the device to its default state (channel 01)."""
-        with self.device_action_lock:
-            try:
-                self.logger.info("Device reset requested via API")
-                
-                # Perform the reset
-                reset_result = self.remote_controller.reset_device()
-                
-                if reset_result["success"]:
-                    return jsonify(reset_result), 200
-                else:
-                    return jsonify(reset_result), 500
-                    
-            except Exception as e:
-                self.logger.error(f"API Error in reset_device: {e}")
-                return jsonify({
-                    "success": False,
-                    "error": f"Internal server error: {e}",
-                    "current_value": self.remote_controller.get_current_value()
-                }), 500
+        try:
+            self.logger.info("Device reset requested via API")
+            self.remote_controller.reset_device()
+            return jsonify({"status": "completed"}), 200
+
+        except Exception as e:
+            self.logger.error(f"API Error in reset_device: {e}")
+            return jsonify({"error": str(e)}), 500
     
     def serve_index(self):
         """Serves the controller page with git information."""

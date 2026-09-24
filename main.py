@@ -22,6 +22,7 @@ from src.remote_state import RemoteState
 from src.gpio_controller import GPIOController
 from src.remote_controller import RemoteController
 from src.shutter_percent_controller import ShutterPercentController
+from src.shutter_travel_times import ShutterTravelTimes
 
 
 def main():
@@ -44,7 +45,8 @@ def main():
         max_value=config.MAX_VALUE
     )
     remote_controller = RemoteController(gpio_controller, config, remote_state)
-    shutter_percent_controller = ShutterPercentController(remote_controller)
+    travel_times = ShutterTravelTimes(ShutterTravelTimes.default_path(), config.MAX_VALUE)
+    shutter_percent_controller = ShutterPercentController(remote_controller, travel_times)
     
     app = PiAluprofApp(config, remote_controller, shutter_percent_controller)
     
@@ -55,11 +57,11 @@ def main():
             logger.info("Running in simulation mode (GPIO not available).")
         
         logger.info("Performing automatic device reset on startup...")
-        reset_result = remote_controller.reset_device()
-        if reset_result["success"]:
+        try:
+            remote_controller.reset_device()
             logger.info("Automatic reset successful - device synchronized to channel 01")
-        else:
-            logger.error(f"Automatic reset failed: {reset_result.get('error', 'Unknown error')}")
+        except Exception as reset_error:
+            logger.error(f"Automatic reset failed: {reset_error}")
         
         logger.info("Starting Flask application on 0.0.0.0:4000")
         app.run(host='0.0.0.0', port=4000, debug=False)

@@ -191,12 +191,12 @@
         if (action === "PERCENT") {
           const percentRaw = document.getElementById("actionPercent").value;
           if (percentRaw === "") {
-            alert("Please enter a closing percentage (0-100)");
+            alert("Please enter an opening percentage (0 closed, 100 open)");
             return;
           }
           const percent = Number(percentRaw);
-          if (Number.isNaN(percent) || percent < 0 || percent > 100) {
-            alert("Percentage must be between 0 and 100");
+          if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
+            alert("Percentage must be a whole number from 0 to 100");
             return;
           }
           payload.percent = percent;
@@ -218,7 +218,7 @@
 
           if (response.ok) {
             if (action === "PERCENT") {
-              alert(`Shutter ${numNr} set to ${payload.percent}% closed`);
+              alert(`Shutter ${numNr} moving to ${payload.percent}% open`);
               document.getElementById("actionPercent").value = "";
             }
             document.getElementById("actionNr").value = "";
@@ -249,7 +249,7 @@
           <option value="STOP">STOP</option>
           <option value="PERCENT">PERCENT</option>
         </select>
-        <input type="number" id="actionPercent" min="0" max="100" step="1" placeholder="Closing % (0-100)" />
+        <input type="number" id="actionPercent" min="0" max="100" step="1" placeholder="Open % (0 closed, 100 open)" />
       </div>
       <button class="api-button" id="executeActionBtn" type="button" onclick="executeAction()">EXECUTE</button>
     </div>

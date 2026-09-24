@@ -2,6 +2,7 @@
 from .gpio_controller import GPIOController
 from .config import Config
 from .remote_state import RemoteState
+import threading
 import time
 import logging
 from typing import Dict, Any
@@ -23,19 +24,30 @@ class RemoteController:
         self.config = config
         self.remote_state = remote_state
         self.last_action_time = 0  # Track when the last action was performed
+        self._lock = threading.RLock()
         self.logger = logging.getLogger('RemoteController')
-    
+
+    def get_lock(self) -> threading.RLock:
+        """Return the remote lock.
+
+        Hold it across a channel change and the button press that belongs
+        with that change. Release it before a travel wait.
+        """
+        return self._lock
+
     def press_up_button(self) -> None:
         """Press the up button (MOVE_UP)."""
-        self._wake_up_when_needed()
-        self.gpio_controller.press_pin(self.config.PIN_MAP['MOVE_UP'])
-        self._update_action_time()
+        with self._lock:
+            self._wake_up_when_needed()
+            self.gpio_controller.press_pin(self.config.PIN_MAP['MOVE_UP'])
+            self._update_action_time()
     
     def press_down_button(self) -> None:
         """Press the down button (GO_DOWN)."""
-        self._wake_up_when_needed()
-        self.gpio_controller.press_pin(self.config.PIN_MAP['GO_DOWN'])
-        self._update_action_time()
+        with self._lock:
+            self._wake_up_when_needed()
+            self.gpio_controller.press_pin(self.config.PIN_MAP['GO_DOWN'])
+            self._update_action_time()
     
     def press_left_button(self) -> int:
         """Press the left button (DECREASE).
@@ -43,11 +55,12 @@ class RemoteController:
         Returns:
             int: The new current value after decrementing
         """
-        self._wake_up_when_needed()
-        self.gpio_controller.press_pin(self.config.PIN_MAP['DECREASE'])
-        new_value = self.remote_state.decrement()
-        self._update_action_time()
-        return new_value
+        with self._lock:
+            self._wake_up_when_needed()
+            self.gpio_controller.press_pin(self.config.PIN_MAP['DECREASE'])
+            new_value = self.remote_state.decrement()
+            self._update_action_time()
+            return new_value
     
     def press_right_button(self) -> int:
         """Press the right button (INCREASE).
@@ -55,23 +68,26 @@ class RemoteController:
         Returns:
             int: The new current value after incrementing
         """
-        self._wake_up_when_needed()
-        self.gpio_controller.press_pin(self.config.PIN_MAP['INCREASE'])
-        new_value = self.remote_state.increment()
-        self._update_action_time()
-        return new_value
+        with self._lock:
+            self._wake_up_when_needed()
+            self.gpio_controller.press_pin(self.config.PIN_MAP['INCREASE'])
+            new_value = self.remote_state.increment()
+            self._update_action_time()
+            return new_value
     
     def press_stop_button(self) -> None:
         """Press the stop button (STOP)."""
-        self._wake_up_when_needed()
-        self.gpio_controller.press_pin(self.config.PIN_MAP['STOP'])
-        self._update_action_time()
+        with self._lock:
+            self._wake_up_when_needed()
+            self.gpio_controller.press_pin(self.config.PIN_MAP['STOP'])
+            self._update_action_time()
     
     def press_p2_button(self) -> None:
         """Press the P2 button (programming mode)."""
-        self._wake_up_when_needed()
-        self.gpio_controller.press_pin(self.config.PIN_MAP['P2'])
-        self._update_action_time()
+        with self._lock:
+            self._wake_up_when_needed()
+            self.gpio_controller.press_pin(self.config.PIN_MAP['P2'])
+            self._update_action_time()
     
     # State management methods
     def get_current_value(self) -> int:
@@ -86,17 +102,22 @@ class RemoteController:
         """Get comprehensive state information."""
         return self.remote_state.get_state_info()
     
-    def move_to_target(self, target: int) -> Dict[str, Any]:
+    def move_to_target(self, target: int) -> None:
         """Move to a specific target value using the shortest path."""
+        with self._lock:
+            self._move_to_target(target)
+
+    def _move_to_target(self, target: int) -> None:
+        """Move to a channel. Caller must already hold the remote lock."""
         current_value = self.remote_state.current_value
         self.logger.debug(f"move_to_target: current={current_value}, target={target}")
 
         if not (0 <= target <= self.config.MAX_VALUE):
-            return {"error": f"Target {target} out of range (0-{self.config.MAX_VALUE}).", "status": "failed"}
+            raise ValueError(f"Target {target} out of range (0-{self.config.MAX_VALUE}).")
 
         if current_value == target:
             self.logger.debug("Already at target - no movement needed")
-            return {"status": "already_at_target", "final_value": current_value, "steps_taken": 0}
+            return
 
         # Calculate shortest path (using modulo arithmetic for wrap-around)
         diff_increase = (target - current_value + self.config.MAX_VALUE + 1) % (self.config.MAX_VALUE + 1)
@@ -123,15 +144,6 @@ class RemoteController:
         
         final_value = self.remote_state.current_value
         self.logger.info(f"Navigation complete: {current_value} → {final_value} (target: {target})")
-        
-        return {
-            "status": "moved_to_target",
-            "target_reached": target,
-            "initial_value": current_value,
-            "final_value": final_value,
-            "steps_taken": steps_taken,
-            "direction": direction_str
-        }
     
     # Private methods
     def _is_device_asleep(self) -> bool:
@@ -197,46 +209,14 @@ class RemoteController:
         """Update the last action time to current time."""
         self.last_action_time = time.time()
     
-    def reset_device(self) -> Dict[str, Any]:
-        """
-        Reset the device to its default state (channel 01).
-        
-        This performs a power cycle reset and synchronizes the internal state.
-        
-        Returns:
-            Dict containing reset status and new state information
-        """
+    def reset_device(self) -> None:
+        """Power-cycle the remote and synchronize state to channel 01."""
         self.logger.info("Starting device reset procedure")
-        
-        try:
-            # Perform power cycle reset
-            reset_success = self.gpio_controller.reset_device()
-            
-            if not reset_success:
-                return {
-                    "success": False,
-                    "error": "Failed to power cycle device",
-                    "current_value": self.remote_state.get_current_value()
-                }
-            
-            # Reset internal state to match device default
+
+        with self._lock:
+            if not self.gpio_controller.reset_device():
+                raise RuntimeError("Failed to power cycle device")
+
             self.remote_state.set_value(1)
             self.last_action_time = time.time()
-            
             self.logger.info("Device reset completed successfully - state synchronized to channel 01")
-            
-            return {
-                "success": True,
-                "message": "Device reset successful",
-                "current_value": 1,
-                "previous_state": "reset",
-                "new_state": "channel_01"
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Device reset failed: {e}")
-            return {
-                "success": False,
-                "error": f"Reset procedure failed: {str(e)}",
-                "current_value": self.remote_state.get_current_value()
-            }

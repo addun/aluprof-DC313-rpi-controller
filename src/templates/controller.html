@@ -401,11 +401,7 @@
 
           const data = await response.json();
 
-          if (response.ok && data.success) {
-            // Update display to show new state
-            updateDisplay(data.current_value);
-
-            // Refresh state from server
+          if (response.ok) {
             pollState();
           } else {
             showError(`Reset failed: ${data.error || "Unknown error"}`);
