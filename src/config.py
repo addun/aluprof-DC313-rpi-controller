@@ -12,7 +12,7 @@ class Config:
     MAX_VALUE = 15
     
     # --- Timing Configuration ---
-    PRESS_DELAY_SEC = 0.1           # Delay between presses to allow the PIC chip to register input
+    PRESS_DELAY_SEC = 0.3           # Delay between presses to allow the PIC chip to register input
     WAKE_UP_DELAY_SEC = 0.5         # Time to wait after waking up the device
     GO_TO_SLEEP_DELAY_SEC = 8       # Device needs 8 seconds to go to sleep after any action
     SLEEP_THRESHOLD_SEC = 0.5       # Additional threshold to ensure device is definitely asleep
